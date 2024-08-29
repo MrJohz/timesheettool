@@ -11,8 +11,8 @@ diesel::table! {
     records (id) {
         id -> Integer,
         task_id -> Integer,
-        occurred_at -> TimestamptzSqlite,
-        ended_at -> TimestamptzSqlite,
+        started_at -> TimestamptzSqlite,
+        ended_at -> Nullable<TimestamptzSqlite>,
     }
 }
 

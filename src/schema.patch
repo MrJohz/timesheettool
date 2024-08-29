@@ -7,10 +7,10 @@ index 9a4cfc5..fd76a0a 100644
      records (id) {
          id -> Integer,
          task_id -> Integer,
--        occurred_at -> Timestamp,
--        ended_at -> Timestamp,
-+        occurred_at -> TimestamptzSqlite,
-+        ended_at -> TimestamptzSqlite,
+-        started_at -> Timestamp,
+-        ended_at -> Nullable<Timestamp>,
++        started_at -> TimestamptzSqlite,
++        ended_at -> Nullable<TimestamptzSqlite>,
      }
  }
  

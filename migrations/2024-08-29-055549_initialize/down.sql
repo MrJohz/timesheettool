@@ -1,3 +1,3 @@
-DROP TABLE projects;
-DROP TABLE tasks;
 DROP TABLE records;
+DROP TABLE tasks;
+DROP TABLE projects;
