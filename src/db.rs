@@ -4,16 +4,14 @@ use diesel::upsert::excluded;
 use diesel::{prelude::*, sql_query};
 use diesel::{Connection, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use dotenvy::dotenv;
 
-pub fn establish_connection() -> Result<SqliteConnection> {
-    dotenv().ok();
-
-    let database_url = std::env::var("DATABASE_URL")?;
-    let mut conn = SqliteConnection::establish(&database_url)?;
-    run_migrations(&mut conn)?;
+pub fn establish_connection(database_url: &str) -> Result<SqliteConnection> {
+    log::trace!("Connecting to SQLite DB at {database_url}");
+    let mut conn = SqliteConnection::establish(database_url)?;
     sql_query("PRAGMA application_id = 0x9b34493a;PRAGMA foreign_keys = TRUE;PRAGMA optimize;")
         .execute(&mut conn)?;
+    log::trace!("Connection to SQLite DB at {database_url} successful");
+    run_migrations(&mut conn)?;
     Ok(conn)
 }
 
@@ -21,12 +19,20 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 fn run_migrations(db: &mut SqliteConnection) -> Result<()> {
     match db.run_pending_migrations(MIGRATIONS) {
-        Ok(_) => Ok(()),
+        Ok(migrations) => {
+            if !migrations.is_empty() {
+                log::trace!(
+                    "Ran {} migration(s) to update SQLite DB schema to latest version",
+                    migrations.len()
+                );
+            }
+            Ok(())
+        }
         Err(_) => anyhow::bail!("Could not update database to the latest version"),
     }
 }
 
-#[derive(Queryable, Identifiable, Selectable, Debug, PartialEq)]
+#[derive(Queryable, Identifiable, Selectable, Debug, PartialEq, Clone)]
 #[diesel(table_name=crate::schema::projects)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Project {
@@ -75,13 +81,17 @@ pub fn upsert_task(conn: &mut SqliteConnection, name: &str) -> Result<(Task, Opt
     Ok((task, project_name))
 }
 
-pub fn get_most_recent_record(conn: &mut SqliteConnection) -> Result<Option<RecordTuple>> {
+pub fn get_most_recent_record(
+    conn: &mut SqliteConnection,
+    before: chrono::DateTime<Utc>,
+) -> Result<Option<RecordTuple>> {
     use crate::schema::projects;
     use crate::schema::records;
     use crate::schema::tasks;
 
     Ok(records::table
         .inner_join(tasks::table.left_outer_join(projects::table))
+        .filter(records::started_at.lt(before))
         .order(records::started_at.desc())
         .first(conn)
         .optional()?)
@@ -105,13 +115,15 @@ pub fn set_record_end_timestamp(
 pub fn insert_record(
     conn: &mut SqliteConnection,
     task_id: i32,
-    timestamp: chrono::DateTime<Utc>,
+    start_date: chrono::DateTime<Utc>,
+    end_date: Option<chrono::DateTime<Utc>>,
 ) -> Result<Record> {
     use crate::schema::records;
     let record = diesel::insert_into(records::table)
         .values((
             records::task_id.eq(task_id),
-            records::started_at.eq(timestamp),
+            records::started_at.eq(start_date),
+            records::ended_at.eq(end_date),
         ))
         .returning(Record::as_returning())
         .get_result(conn)?;

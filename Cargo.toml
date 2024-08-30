@@ -8,7 +8,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.86"
 chrono = "0.4.38"
-clap = "4.5.16"
+clap = { version = "4.5.16", features = ["derive"] }
 diesel = { version = "2.2.3", features = ["sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 dotenvy = "0.15.7"
+log = "0.4.22"
+stderrlog = "0.6.0"
