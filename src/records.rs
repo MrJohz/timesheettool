@@ -15,34 +15,36 @@ impl<'a> Records<'a> {
         Self { db }
     }
 
-    pub fn add_record(
-        &mut self,
-        task_name: &str,
-        start_date: DateTime<Utc>,
-    ) -> Result<(Record, Option<Record>)> {
-        let mut prev = None;
+    pub fn complete_last_record(&mut self, end_date: DateTime<Utc>) -> Result<Option<Record>> {
         let last_record = get_most_recent_record(self.db)?;
         if let Some((record, (task, project))) = last_record {
-            set_record_end_timestamp(self.db, record.id, start_date)?;
-            prev = Some(Record {
-                task: task.name,
-                project: project.map(|p| p.name),
-                started_at: record.started_at,
-                ended_at: Some(start_date),
-            })
+            if record.ended_at.is_none() {
+                set_record_end_timestamp(self.db, record.id, end_date)?;
+
+                Ok(Some(Record {
+                    task: task.name,
+                    project: project.map(|p| p.name),
+                    started_at: record.started_at,
+                    ended_at: Some(end_date),
+                }))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
         }
+    }
+
+    pub fn add_record(&mut self, task_name: &str, start_date: DateTime<Utc>) -> Result<Record> {
         let (task, project_name) = upsert_task(self.db, task_name)?;
         let record = insert_record(self.db, task.id, start_date)?;
 
-        Ok((
-            Record {
-                task: task.name,
-                project: project_name,
-                started_at: record.started_at,
-                ended_at: record.ended_at,
-            },
-            prev,
-        ))
+        Ok(Record {
+            task: task.name,
+            project: project_name,
+            started_at: record.started_at,
+            ended_at: record.ended_at,
+        })
     }
 
     pub fn list_records(&mut self) -> Result<Vec<Record>> {
