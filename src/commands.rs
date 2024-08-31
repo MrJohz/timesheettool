@@ -24,7 +24,7 @@ pub struct Arguments {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Create a new time sheet record
+    /// Start a new time sheet record
     ///
     /// Creates a new time sheet record with the given task name.
     /// By default, this will be an active record (i.e. no end date),
@@ -35,19 +35,29 @@ pub enum Commands {
     /// this record, then that record will be ended with the start time of
     /// the newly created record.  This can be disabled using the
     /// --allow-overlap flag.
-    #[clap(aliases = &["start", "go"])]
-    Log(Log),
+    ///
+    /// Aliases: start, record
+    #[clap(aliases = &["start", "record"])]
+    Go(Go),
 
     /// Stop the current record
     ///
-    /// If any task is open at the given time, stop that task.  By default.
+    /// If any task is open at the given time, stop that task.  By default,
     /// the time used is the current time, but this can optionally be set
     /// using a flag.
     Stop(Stop),
+
+    /// List all records
+    ///
+    /// By default, shows all records for the last week.  This can be changed
+    /// using the --granularity flag (to change how records are groups) and
+    /// the --since flag (to change how many records to show).
+    #[clap(aliases = &["list", "list-records"])]
+    Ls(ListRecords),
 }
 
 #[derive(Args, Debug)]
-pub struct Log {
+pub struct Go {
     /// task name
     ///
     /// Provides the task name that this record should be logged under.  If
@@ -84,4 +94,14 @@ pub struct Stop {
     /// format of this string.)
     #[arg(short = 'e', long)]
     pub end: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ListRecords {
+    /// how many
+    #[arg(short = 's', long)]
+    pub since: String,
+
+    #[arg(short = 'g', long)]
+    pub granularity: String,
 }
