@@ -2,15 +2,15 @@ use anyhow::{anyhow, Result};
 use chrono::{SubsecRound as _, Utc};
 use timesheettool::{
     commands::{Go, ListRecords, Stop},
+    config::Config,
     db,
     parse::{parse_date, parse_relative_date},
     records,
 };
 use tzfile::Tz;
 
-pub fn go(go: Go) -> Result<()> {
-    let database_url = std::env::var("DATABASE_URL")?;
-    let mut conn = db::establish_connection(&database_url)?;
+pub fn go(config: Config, go: Go) -> Result<()> {
+    let mut conn = db::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
     let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
@@ -57,9 +57,8 @@ pub fn go(go: Go) -> Result<()> {
     Ok(())
 }
 
-pub fn stop(stop: Stop) -> Result<()> {
-    let database_url = std::env::var("DATABASE_URL")?;
-    let mut conn = db::establish_connection(&database_url)?;
+pub fn stop(config: Config, stop: Stop) -> Result<()> {
+    let mut conn = db::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
     let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
@@ -82,9 +81,8 @@ pub fn stop(stop: Stop) -> Result<()> {
     Ok(())
 }
 
-pub fn ls(list_records: ListRecords) -> Result<()> {
-    let database_url = std::env::var("DATABASE_URL")?;
-    let mut conn = db::establish_connection(&database_url)?;
+pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
+    let mut conn = db::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
 
     let local_tz = Tz::local()?;

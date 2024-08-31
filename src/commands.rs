@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug)]
@@ -7,7 +9,7 @@ pub struct Arguments {
     ///
     /// This flag can be used multiple times to increase the amount of information
     /// produced by timesheettool
-    #[arg(global = true, short, long, action = clap::ArgAction::Count, help_heading = "Logging")]
+    #[arg(global = true, short, long, action = clap::ArgAction::Count, help_heading = "Global Options")]
     pub verbose: u8,
 
     /// output no logging
@@ -15,8 +17,15 @@ pub struct Arguments {
     /// Setting quiet disables all logging to stderr.  Data will only be printed
     /// to stdout, and only for commands that output information as their main
     /// action.
-    #[arg(global = true, long, action = clap::ArgAction::SetTrue, help_heading = "Logging")]
+    #[arg(global = true, long, action = clap::ArgAction::SetTrue, help_heading = "Global Options")]
     pub quiet: bool,
+
+    /// set config file location
+    ///
+    /// Defaults to "timesheettool/config.toml" in the standard config directory
+    /// of the current operating system.
+    #[arg(global = true, long, help_heading = "Global Options")]
+    pub config_file: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Commands,

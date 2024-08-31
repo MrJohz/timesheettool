@@ -1,15 +1,33 @@
+use std::fs::create_dir_all;
+use std::path::Path;
+
 use anyhow::{bail, Result};
 use diesel::upsert::excluded;
 use diesel::{prelude::*, sql_query};
 use diesel::{Connection, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
-pub fn establish_connection(database_url: &str) -> Result<SqliteConnection> {
+pub fn establish_connection(database_url: impl AsRef<Path>) -> Result<SqliteConnection> {
+    let database_url = database_url.as_ref();
+
+    // The database and potentially its parent folders may not yet exist.  SQLite can handle
+    // creating the file fine, but we need to make sure all of the parent folders also exist.
+    if let Some(parent) = database_url.parent() {
+        create_dir_all(parent)?;
+    }
+
+    // it seems kind of pointless to accept a path (which may not be utf-8) only to convert it lossily
+    // into a string (which will be utf-8, but may not be exactly the path specified).  However, SQLite
+    // only accepts utf-8 or utf-16 paths, and it's easier to type things elsewhere if we assume that the
+    // database url is a real path
+    // See: https://github.com/diesel-rs/diesel/discussions/3069
+    let database_url = database_url.to_string_lossy();
+
     log::trace!("Connecting to SQLite DB at {database_url}");
-    let mut conn = SqliteConnection::establish(database_url)?;
+    let mut conn = SqliteConnection::establish(&database_url)?;
     sql_query("PRAGMA application_id = 0x9b34493a;PRAGMA foreign_keys = TRUE;PRAGMA optimize;")
         .execute(&mut conn)?;
-    log::trace!("Connection to SQLite DB at {database_url} successful");
+    log::trace!("Connection to SQLite DB successful");
     run_migrations(&mut conn)?;
     Ok(conn)
 }
