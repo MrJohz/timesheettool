@@ -13,4 +13,6 @@ diesel = { version = "2.2.3", features = ["sqlite", "chrono", "returning_clauses
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 dotenvy = "0.15.7"
 log = "0.4.22"
+regex = "1.10.6"
 stderrlog = "0.6.0"
+tzfile = "0.1.3"

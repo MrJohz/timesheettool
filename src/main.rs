@@ -1,12 +1,14 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{SubsecRound, Utc};
 use clap::Parser;
 use dotenvy::dotenv;
 use log::{info, warn};
 use timesheettool::{
     commands::{Arguments, Commands},
+    dateparse::parse_date,
     db, records,
 };
+use tzfile::Tz;
 
 fn main() -> Result<()> {
     dotenv().ok();
@@ -22,8 +24,22 @@ fn main() -> Result<()> {
             let database_url = std::env::var("DATABASE_URL")?;
             let mut conn = db::establish_connection(&database_url)?;
             let mut recs = records::Records::new(&mut conn);
-            let start_date = log.start.unwrap_or_else(Utc::now).round_subsecs(0);
-            let end_date = log.end.map(|t| t.round_subsecs(0));
+            let local_tz = Tz::local()?;
+            let today = Utc::now().naive_local().date();
+            let start_date = log
+                .start
+                .map(|dt| {
+                    parse_date(&dt, &local_tz, today)
+                        .ok_or(anyhow!("could not parse start time {dt}"))
+                })
+                .unwrap_or_else(|| Ok(Utc::now().round_subsecs(0)))?;
+            let end_date = log
+                .end
+                .map(|dt| {
+                    parse_date(&dt, &local_tz, today)
+                        .ok_or(anyhow!("could not parse end time {dt}"))
+                })
+                .transpose()?;
 
             if !log.allow_overlap {
                 let updated = recs.complete_last_record(start_date, end_date)?;
@@ -55,7 +71,15 @@ fn main() -> Result<()> {
             let database_url = std::env::var("DATABASE_URL")?;
             let mut conn = db::establish_connection(&database_url)?;
             let mut recs = records::Records::new(&mut conn);
-            let end_date = stop.end.unwrap_or_else(Utc::now).round_subsecs(0);
+            let local_tz = Tz::local()?;
+            let today = Utc::now().naive_local().date();
+            let end_date = stop
+                .end
+                .map(|dt| {
+                    parse_date(&dt, &local_tz, today)
+                        .ok_or(anyhow!("could not parse end time {dt}"))
+                })
+                .unwrap_or_else(|| Ok(Utc::now().round_subsecs(0)))?;
 
             let updated = recs.complete_last_record(end_date, None)?;
             if updated.len() == 1 {

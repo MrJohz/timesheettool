@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -57,15 +56,19 @@ pub struct Log {
 
     /// record start time
     ///
-    /// defaults to the current time
+    /// Defaults to the current time.  Can be specified as a ISO-8601-style
+    /// string, or as a relative string.  (See documentation for the exact
+    /// format of this string.)
     #[arg(short = 's', long)]
-    pub start: Option<DateTime<Utc>>,
+    pub start: Option<String>,
 
     /// record end time
     ///
-    /// defaults to no end time if not set (i.e. the task is marked as still in progress)
+    /// Defaults to no end time if not set (i.e. the task is marked as still in progress).
+    /// Can be specified as a ISO-8601-style string, or as a relative string.  (See
+    /// documentation for the exact format of this string.)
     #[arg(short = 'e', long)]
-    pub end: Option<DateTime<Utc>>,
+    pub end: Option<String>,
 
     /// allow this record to overlap other records in the database
     #[arg(long, action=clap::ArgAction::SetTrue)]
@@ -76,7 +79,9 @@ pub struct Log {
 pub struct Stop {
     /// record end time
     ///
-    /// defaults to the current time if not set
+    /// Defaults to the current time.  Can be specified as a ISO-8601-style
+    /// string, or as a relative string.  (See documentation for the exact
+    /// format of this string.)
     #[arg(short = 'e', long)]
-    pub end: Option<DateTime<Utc>>,
+    pub end: Option<String>,
 }
