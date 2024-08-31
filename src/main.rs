@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{SubsecRound, Utc};
 use clap::Parser;
 use dotenvy::dotenv;
-use log::info;
+use log::{info, warn};
 use timesheettool::{
     commands::{Arguments, Commands},
     db, records,
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
             let mut conn = db::establish_connection(&database_url)?;
             let mut recs = records::Records::new(&mut conn);
             let start_date = log.start.unwrap_or_else(Utc::now).round_subsecs(0);
-            let end_date = log.end;
+            let end_date = log.end.map(|t| t.round_subsecs(0));
 
             if !log.allow_overlap {
                 let updated = recs.complete_last_record(start_date, end_date)?;
@@ -49,6 +49,22 @@ fn main() -> Result<()> {
                         log.name
                     )
                 }
+            }
+        }
+        Commands::Stop(stop) => {
+            let database_url = std::env::var("DATABASE_URL")?;
+            let mut conn = db::establish_connection(&database_url)?;
+            let mut recs = records::Records::new(&mut conn);
+            let end_date = stop.end.unwrap_or_else(Utc::now).round_subsecs(0);
+
+            let updated = recs.complete_last_record(end_date, None)?;
+            if updated.len() == 1 {
+                info!(
+                    "Updated previous record for {} to end at {}",
+                    updated[0].task, end_date
+                );
+            } else {
+                warn!("No previous record found to be ended at {}", end_date);
             }
         }
     }

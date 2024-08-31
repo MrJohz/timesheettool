@@ -38,6 +38,13 @@ pub enum Commands {
     /// --allow-overlap flag.
     #[clap(aliases = &["start", "go"])]
     Log(Log),
+
+    /// Stop the current record
+    ///
+    /// If any task is open at the given time, stop that task.  By default.
+    /// the time used is the current time, but this can optionally be set
+    /// using a flag.
+    Stop(Stop),
 }
 
 #[derive(Args, Debug)]
@@ -63,4 +70,13 @@ pub struct Log {
     /// allow this record to overlap other records in the database
     #[arg(long, action=clap::ArgAction::SetTrue)]
     pub allow_overlap: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct Stop {
+    /// record end time
+    ///
+    /// defaults to the current time if not set
+    #[arg(short = 'e', long)]
+    pub end: Option<DateTime<Utc>>,
 }
