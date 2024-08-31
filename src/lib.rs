@@ -1,5 +1,5 @@
 pub mod commands;
-pub mod dateparse;
 pub mod db;
+pub mod parse;
 pub mod records;
 pub mod schema;

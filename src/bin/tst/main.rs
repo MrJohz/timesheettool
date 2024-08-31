@@ -17,9 +17,7 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Go(go) => commands::go(go)?,
         Commands::Stop(stop) => commands::stop(stop)?,
-        Commands::Ls(list_records) => {
-            dbg!(list_records);
-        }
+        Commands::Ls(list_records) => commands::ls(list_records)?,
     }
     Ok(())
 }

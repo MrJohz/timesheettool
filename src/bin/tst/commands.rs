@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use chrono::{SubsecRound as _, Utc};
 use timesheettool::{
-    commands::{Go, Stop},
-    dateparse::parse_date,
-    db, records,
+    commands::{Go, ListRecords, Stop},
+    db,
+    parse::{parse_date, parse_relative_date},
+    records,
 };
 use tzfile::Tz;
 
@@ -78,5 +79,20 @@ pub fn stop(stop: Stop) -> Result<()> {
         log::warn!("No previous record found to be ended at {}", end_date);
     }
 
+    Ok(())
+}
+
+pub fn ls(list_records: ListRecords) -> Result<()> {
+    let database_url = std::env::var("DATABASE_URL")?;
+    let mut conn = db::establish_connection(&database_url)?;
+    let mut recs = records::Records::new(&mut conn);
+
+    let local_tz = Tz::local()?;
+    let today = Utc::now().naive_local().date();
+    let start = parse_relative_date(&list_records.since, &local_tz, today)
+        .ok_or(anyhow!("could not parse end time {}", &list_records.since))?;
+    let end = parse_relative_date(&list_records.until, &local_tz, today)
+        .ok_or(anyhow!("could not parse end time {}", &list_records.until))?;
+    dbg!(recs.list_records(start, end)?);
     Ok(())
 }

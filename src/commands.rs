@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -98,10 +98,45 @@ pub struct Stop {
 
 #[derive(Args, Debug)]
 pub struct ListRecords {
-    /// how many
-    #[arg(short = 's', long)]
+    /// how long back to show records
+    ///
+    /// Results will be rounded to the beginning of the relevant period.
+    /// For example, if since is "1 week", then all records from the start
+    /// of the current week will be shown.  Similarly, an argument of
+    /// "2 months" will show all records from the current and previous months.
+    #[arg(short = 's', long, default_value = "1 week")]
     pub since: String,
+    /// when to show records until
+    ///
+    /// Results will be rounded to the beginning of the relevant period.
+    /// For example, if until is "1 week", then records will be shown until
+    /// the start of the current week.  Similarly, an argument of "2 months"
+    /// will show all records up until the beginning of the previous month.
+    /// The keyword "now" will show results until the current time.
+    #[arg(short = 'u', long, default_value = "now")]
+    pub until: String,
 
-    #[arg(short = 'g', long)]
-    pub granularity: String,
+    /// how to aggregate records
+    ///
+    /// By default, results will be aggregated automatically according to the
+    /// number of records shown.  For example, if a month's worth of records are
+    /// shown, then the records will be aggregated into individual weeks.
+    /// Otherwise, results will be aggregated according to the unit of time given
+    /// here.  Use "All" to show each individual record.
+    #[arg(short = 'g', long, default_value = "auto")]
+    pub granularity: Granularity,
+}
+
+#[derive(ValueEnum, Debug, Clone)]
+pub enum Granularity {
+    /// automatically aggregate records
+    Auto,
+    /// show all records
+    All,
+    /// show time spent on tasks per day
+    Daily,
+    /// Show time spent on tasks per week
+    Weekly,
+    /// Show time spent on tasks per month
+    Monthly,
 }

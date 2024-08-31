@@ -76,8 +76,12 @@ impl<'a> Records<'a> {
         })
     }
 
-    pub fn list_records(&mut self) -> Result<Vec<Record>> {
-        let records = query_records(self.db)?
+    pub fn list_records(
+        &mut self,
+        start_date: DateTime<Utc>,
+        end_date: DateTime<Utc>,
+    ) -> Result<Vec<Record>> {
+        let records = query_records(self.db, start_date, end_date)?
             .map(|row| {
                 row.map(|(record, (task, project))| Record {
                     task: task.name,
@@ -128,7 +132,9 @@ mod tests {
         assert_eq!(record.started_at, dt("10:00:00"));
         assert_eq!(record.ended_at, None);
 
-        let record_list = records.list_records().unwrap();
+        let record_list = records
+            .list_records(dt("00:00:00"), dt("23:59:59"))
+            .unwrap();
         assert_eq!(record_list.len(), 1);
         assert_eq!(record_list[0].task, "hello, world");
     }
@@ -144,7 +150,9 @@ mod tests {
         assert_eq!(record.started_at, dt("10:00:00"));
         assert_eq!(record.ended_at, Some(dt("11:00:00")));
 
-        let record_list = records.list_records().unwrap();
+        let record_list = records
+            .list_records(dt("00:00:00"), dt("23:59:59"))
+            .unwrap();
         assert_eq!(record_list.len(), 1);
         assert_eq!(record_list[0].task, "hello, world");
     }

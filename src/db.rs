@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use chrono::Utc;
 use diesel::upsert::excluded;
 use diesel::{prelude::*, sql_query};
 use diesel::{Connection, SqliteConnection};
@@ -83,7 +82,7 @@ pub fn upsert_task(conn: &mut SqliteConnection, name: &str) -> Result<(Task, Opt
 
 pub fn get_most_recent_record(
     conn: &mut SqliteConnection,
-    before: chrono::DateTime<Utc>,
+    before: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<RecordTuple>> {
     use crate::schema::projects;
     use crate::schema::records;
@@ -100,7 +99,7 @@ pub fn get_most_recent_record(
 pub fn set_record_end_timestamp(
     conn: &mut SqliteConnection,
     record_id: i32,
-    timestamp: chrono::DateTime<Utc>,
+    timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<()> {
     use crate::schema::records;
     let count = diesel::update(records::table.filter(records::id.eq(record_id)))
@@ -115,8 +114,8 @@ pub fn set_record_end_timestamp(
 pub fn insert_record(
     conn: &mut SqliteConnection,
     task_id: i32,
-    start_date: chrono::DateTime<Utc>,
-    end_date: Option<chrono::DateTime<Utc>>,
+    start_date: chrono::DateTime<chrono::Utc>,
+    end_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Record> {
     use crate::schema::records;
     let record = diesel::insert_into(records::table)
@@ -133,6 +132,8 @@ pub fn insert_record(
 pub type RecordTuple = (Record, (Task, Option<Project>));
 pub fn query_records(
     conn: &mut SqliteConnection,
+    start_date: chrono::DateTime<chrono::Utc>,
+    end_date: chrono::DateTime<chrono::Utc>,
 ) -> Result<impl Iterator<Item = QueryResult<RecordTuple>> + '_> {
     use crate::schema::projects;
     use crate::schema::records;
@@ -140,5 +141,11 @@ pub fn query_records(
 
     Ok(records::table
         .inner_join(tasks::table.left_outer_join(projects::table))
+        .filter(
+            records::ended_at
+                .gt(start_date)
+                .or(records::ended_at.is_null()),
+        )
+        .filter(records::started_at.lt(end_date))
         .load_iter(conn)?)
 }

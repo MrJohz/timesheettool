@@ -28,7 +28,7 @@ $ # anchor to end of string
 });
 
 pub fn parse_date(date: &str, timezone: &Tz, today: NaiveDate) -> Option<DateTime<Utc>> {
-    let captures = dbg!(REGEX.captures(date.trim()))?;
+    let captures = REGEX.captures(date.trim())?;
 
     let today = parse_relative_date(captures.get(4).map(|f| f.as_str()), today)?;
 
@@ -50,7 +50,7 @@ fn parse_relative_date(relation: Option<&str>, today: NaiveDate) -> Option<Naive
         Some(day) if day.eq_ignore_ascii_case("today") => Some(today),
         Some(day) if day.eq_ignore_ascii_case("yesterday") => today.pred_opt(),
         Some(day) => {
-            let weekday = dbg!(day.parse()).ok()?;
+            let weekday = day.parse().ok()?;
             find_last_day(today, weekday)
         }
     }
@@ -62,7 +62,7 @@ fn find_last_day(today: NaiveDate, day_of_week: Weekday) -> Option<NaiveDate> {
         // don't allow user to specify "monday" on a monday,
         // as it is ambiguous if they mean today or last monday
         0 => None,
-        n => today.checked_sub_days(Days::new(n as u64)),
+        n => Some(today - (Days::new(n as u64))),
     }
 }
 
@@ -85,6 +85,17 @@ mod tests {
     fn parses_simplified_iso_format() {
         let parsed = parse_date(
             "2022-01-05 01:05:07",
+            &Tz::named("Etc/UTC").unwrap(),
+            today(),
+        )
+        .unwrap();
+        assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 7).unwrap());
+    }
+
+    #[test]
+    fn parses_simplified_iso_format_with_excess_whitespace() {
+        let parsed = parse_date(
+            "    2022-01-05    01:05:07    ",
             &Tz::named("Etc/UTC").unwrap(),
             today(),
         )
