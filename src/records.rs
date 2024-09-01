@@ -1,10 +1,21 @@
+use std::sync::LazyLock;
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use diesel::SqliteConnection;
+use sqids::{Sqids, SqidsBuilder};
 
 use crate::db::{
     get_most_recent_record, insert_record, query_records, set_record_end_timestamp, upsert_task,
 };
+
+static SQIDS: LazyLock<Sqids> = LazyLock::new(|| {
+    SqidsBuilder::new()
+        .alphabet("abcdefghijklmnopqrstuvwxyz".chars().collect())
+        .min_length(5)
+        .build()
+        .unwrap()
+});
 
 pub struct Records<'a> {
     db: &'a mut SqliteConnection,
@@ -30,6 +41,7 @@ impl<'a> Records<'a> {
                     None => {
                         set_record_end_timestamp(self.db, record.id, end_date)?;
                         records.push(Record {
+                            id: sqid(record.id),
                             task: task.name.clone(),
                             project: project.clone().map(|p| p.name),
                             started_at: record.started_at,
@@ -45,6 +57,7 @@ impl<'a> Records<'a> {
                             let record =
                                 insert_record(self.db, task.id, start_date, record.ended_at)?;
                             records.push(Record {
+                                id: sqid(record.id),
                                 task: task.name,
                                 project: project.map(|p| p.name),
                                 started_at: start_date,
@@ -69,6 +82,7 @@ impl<'a> Records<'a> {
         let record = insert_record(self.db, task.id, start_date, end_date)?;
 
         Ok(Record {
+            id: sqid(record.id),
             task: task.name,
             project: project_name,
             started_at: record.started_at,
@@ -84,6 +98,7 @@ impl<'a> Records<'a> {
         let records = query_records(self.db, start_date, end_date)?
             .map(|row| {
                 row.map(|(record, (task, project))| Record {
+                    id: sqid(record.id),
                     task: task.name,
                     project: project.map(|p| p.name),
                     started_at: record.started_at,
@@ -97,8 +112,17 @@ impl<'a> Records<'a> {
     }
 }
 
+fn sqid(record_id: i32) -> String {
+    // reinterpret any i32 values, bit-for-bit, as a u32 value.
+    // this is basically a no-op (the compiler will optimise this
+    // away even at opt-level=1).
+    let as_u32 = u32::from_be_bytes(record_id.to_be_bytes());
+    SQIDS.encode(&[as_u32 as u64]).unwrap()
+}
+
 #[derive(Debug)]
 pub struct Record {
+    pub id: String,
     pub task: String,
     pub project: Option<String>,
     pub started_at: DateTime<Utc>,

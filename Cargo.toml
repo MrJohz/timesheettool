@@ -16,6 +16,7 @@ dotenvy = "0.15.7"
 log = "0.4.22"
 regex = "1.10.6"
 serde = { version = "1.0.209", features = ["derive"] }
+sqids = "0.4.1"
 stderrlog = "0.6.0"
 toml = "0.8.19"
 tzfile = "0.1.3"
