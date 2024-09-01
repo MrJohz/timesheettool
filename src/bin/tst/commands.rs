@@ -94,3 +94,28 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
     dbg!(recs.list_records(start, end)?);
     Ok(())
 }
+
+pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Result<()> {
+    let mut conn = db::establish_connection(&config.database_path)?;
+    let mut recs = records::Records::new(&mut conn);
+    let local_tz = Tz::local()?;
+    let today = Utc::now().naive_local().date();
+
+    let start_date = edit
+        .start
+        .map(|dt| {
+            parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse start time {dt}"))
+        })
+        .transpose()?;
+    let end_date = edit
+        .end
+        .map(|dt| parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse end time {dt}")))
+        .transpose()?;
+    let task_name = edit.task;
+
+    let record = recs.update_record(&edit.record_id, start_date, end_date, task_name.as_deref())?;
+
+    log::info!("Record updated: {record:?}");
+
+    Ok(())
+}

@@ -1,12 +1,13 @@
 use std::sync::LazyLock;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
 use diesel::SqliteConnection;
 use sqids::{Sqids, SqidsBuilder};
 
 use crate::db::{
-    get_most_recent_record, insert_record, query_records, set_record_end_timestamp, upsert_task,
+    get_most_recent_record, insert_record, query_records, set_record_end_timestamp, update_record,
+    upsert_task,
 };
 
 static SQIDS: LazyLock<Sqids> = LazyLock::new(|| {
@@ -110,6 +111,36 @@ impl<'a> Records<'a> {
 
         Ok(records)
     }
+
+    pub fn update_record(
+        &mut self,
+        record_id: &str,
+        start_date: Option<DateTime<Utc>>,
+        end_date: Option<DateTime<Utc>>,
+        task_name: Option<&str>,
+    ) -> Result<Record> {
+        let id = desqid(record_id)?;
+
+        let task = task_name
+            .map(|task_name| upsert_task(self.db, task_name))
+            .transpose()?;
+
+        let (record, (task, project)) = update_record(
+            self.db,
+            id,
+            start_date,
+            end_date,
+            task.map(|(task, _)| task.id),
+        )?;
+
+        Ok(Record {
+            id: record_id.into(),
+            started_at: record.started_at,
+            ended_at: record.ended_at,
+            task: task.name,
+            project: project.map(|p| p.name),
+        })
+    }
 }
 
 fn sqid(record_id: i32) -> String {
@@ -118,6 +149,20 @@ fn sqid(record_id: i32) -> String {
     // away even at opt-level=1).
     let as_u32 = u32::from_be_bytes(record_id.to_be_bytes());
     SQIDS.encode(&[as_u32 as u64]).unwrap()
+}
+
+fn desqid(sqid: &str) -> Result<i32> {
+    let ids = SQIDS.decode(sqid);
+    if ids.len() != 1 {
+        bail!("invalid record id {sqid}");
+    }
+
+    let as_u32: u32 = ids[0]
+        .try_into()
+        .map_err(|_| anyhow!("invalid record id {sqid}"))?;
+
+    let as_i32 = i32::from_be_bytes(as_u32.to_be_bytes());
+    Ok(as_i32)
 }
 
 #[derive(Debug)]
@@ -272,5 +317,28 @@ mod tests {
         assert_eq!(record[1].started_at, dt("12:00:00"));
         assert_eq!(record[1].ended_at, None);
         assert_eq!(record.len(), 2);
+    }
+
+    #[test]
+    fn can_update_existing_functions() {
+        let mut conn = establish_connection(":memory:").unwrap();
+        let mut records = Records::new(&mut conn);
+        let record = records
+            .add_record("abc", dt("10:00:00"), Some(dt("12:00:00")))
+            .unwrap();
+
+        let updated = records
+            .update_record(
+                &record.id,
+                Some(dt("11:00:00")),
+                None,
+                Some("new task name"),
+            )
+            .unwrap();
+
+        assert_eq!(updated.id, record.id);
+        assert_eq!(updated.started_at, dt("11:00:00"));
+        assert_eq!(updated.ended_at, Some(dt("12:00:00")));
+        assert_eq!(updated.task, "new task name");
     }
 }

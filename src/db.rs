@@ -78,6 +78,15 @@ pub struct Record {
     pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+#[derive(AsChangeset)]
+#[diesel(table_name = crate::schema::records)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct RecordUpdate {
+    pub task_id: Option<i32>,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 pub fn upsert_task(conn: &mut SqliteConnection, name: &str) -> Result<(Task, Option<String>)> {
     use crate::schema::projects;
     use crate::schema::tasks;
@@ -145,6 +154,34 @@ pub fn insert_record(
         .returning(Record::as_returning())
         .get_result(conn)?;
     Ok(record)
+}
+
+pub fn update_record(
+    conn: &mut SqliteConnection,
+    record_id: i32,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+    ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    task_id: Option<i32>,
+) -> Result<RecordTuple> {
+    use crate::schema::projects;
+    use crate::schema::records;
+    use crate::schema::tasks;
+    let record = diesel::update(records::table)
+        .filter(records::id.eq(record_id))
+        .set(&RecordUpdate {
+            started_at,
+            ended_at,
+            task_id,
+        })
+        .returning(Record::as_returning())
+        .get_result(conn)?;
+
+    let (task, project) = tasks::table
+        .left_outer_join(projects::table)
+        .filter(tasks::id.eq(record.task_id))
+        .get_result(conn)?;
+
+    Ok((record, (task, project)))
 }
 
 pub type RecordTuple = (Record, (Task, Option<Project>));

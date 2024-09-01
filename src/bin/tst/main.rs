@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         Commands::Go(go) => commands::go(config, go)?,
         Commands::Stop(stop) => commands::stop(config, stop)?,
         Commands::Ls(list_records) => commands::ls(config, list_records)?,
+        Commands::Edit(edit) => commands::edit(config, edit)?,
     }
     Ok(())
 }

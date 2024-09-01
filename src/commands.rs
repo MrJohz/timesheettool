@@ -63,6 +63,13 @@ pub enum Commands {
     /// the --since flag (to change how many records to show).
     #[clap(aliases = &["list", "list-records"])]
     Ls(ListRecords),
+
+    /// Edit an existing record
+    ///
+    /// Use the ID of an existing record to update its attributes.  Note: this
+    /// can break some of the assumptions made by timesheettool, so use this
+    /// with care.
+    Edit(Edit),
 }
 
 #[derive(Args, Debug)]
@@ -148,4 +155,27 @@ pub enum Granularity {
     Weekly,
     /// Show time spent on tasks per month
     Monthly,
+}
+
+#[derive(Args, Debug)]
+pub struct Edit {
+    /// record id
+    ///
+    /// The five-letter record ID
+    pub record_id: String,
+
+    /// record start time
+    #[arg(short = 's', long)]
+    pub start: Option<String>,
+
+    /// record end time
+    #[arg(short = 'e', long)]
+    pub end: Option<String>,
+
+    /// task name
+    ///
+    /// Provides the task name that this record should be logged under.  If
+    /// the tag name doesn't exist yet in the database, it will be created.
+    #[arg(short = 't', long)]
+    pub task: Option<String>,
 }
