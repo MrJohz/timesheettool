@@ -77,22 +77,13 @@ pub struct Project {
 }
 
 #[derive(Queryable, Identifiable, Selectable, Associations, Debug, PartialEq)]
-#[diesel(table_name=super::schema::tasks)]
-#[diesel(belongs_to(Project))]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct Task {
-    pub id: i32,
-    pub name: String,
-    pub project_id: Option<i32>,
-}
-
-#[derive(Queryable, Identifiable, Selectable, Associations, Debug, PartialEq)]
 #[diesel(table_name = super::schema::records)]
-#[diesel(belongs_to(Task))]
+#[diesel(belongs_to(Project))]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Record {
     pub id: i32,
-    pub task_id: i32,
+    pub task: String,
+    pub project_id: i32,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -100,30 +91,26 @@ pub struct Record {
 #[derive(AsChangeset)]
 #[diesel(table_name = super::schema::records)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct RecordUpdate {
-    pub task_id: Option<i32>,
+struct RecordUpdate<'a> {
+    pub task: Option<&'a str>,
+    pub project_id: Option<i32>,
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub fn upsert_task(conn: &mut Conn, name: &str) -> Result<(Task, Option<String>)> {
+pub fn upsert_project(conn: &mut Conn, project_name: &str) -> Result<Project> {
     use super::schema::projects;
-    use super::schema::tasks;
-    let task = diesel::insert_into(tasks::table)
-        .values(tasks::name.eq(name))
-        .on_conflict(tasks::name)
+
+    let project = diesel::insert_into(projects::table)
+        .values(projects::name.eq(project_name))
+        .on_conflict(projects::name)
         .do_update()
-        // "updates" the task name to itself - this should be a no-op, but allows us to use
-        // the returning clause to fetch the task ID and other details.
-        .set(tasks::name.eq(excluded(tasks::name)))
-        .returning(Task::as_returning())
+        // "updates" the project name to itself - this should be a no-op, but allows us to use
+        // the returning clause to fetch the project ID and other details.
+        .set(projects::name.eq(excluded(projects::name)))
+        .returning(Project::as_returning())
         .get_result(&mut conn.0)?;
-    let project_name = projects::table
-        .filter(projects::id.nullable().eq(task.project_id))
-        .select(projects::name)
-        .get_result(&mut conn.0)
-        .optional()?;
-    Ok((task, project_name))
+    Ok(project)
 }
 
 pub fn get_most_recent_record(
@@ -132,10 +119,9 @@ pub fn get_most_recent_record(
 ) -> Result<Option<RecordTuple>> {
     use super::schema::projects;
     use super::schema::records;
-    use super::schema::tasks;
 
     Ok(records::table
-        .inner_join(tasks::table.left_outer_join(projects::table))
+        .inner_join(projects::table)
         .filter(records::started_at.lt(before))
         .order(records::started_at.desc())
         .first(&mut conn.0)
@@ -159,14 +145,16 @@ pub fn set_record_end_timestamp(
 
 pub fn insert_record(
     conn: &mut Conn,
-    task_id: i32,
+    task: &str,
+    project_id: i32,
     start_date: chrono::DateTime<chrono::Utc>,
     end_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Record> {
     use super::schema::records;
     let record = diesel::insert_into(records::table)
         .values((
-            records::task_id.eq(task_id),
+            records::project_id.eq(project_id),
+            records::task.eq(task),
             records::started_at.eq(start_date),
             records::ended_at.eq(end_date),
         ))
@@ -180,30 +168,38 @@ pub fn update_record(
     record_id: i32,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
     ended_at: Option<chrono::DateTime<chrono::Utc>>,
-    task_id: Option<i32>,
-) -> Result<RecordTuple> {
-    use super::schema::projects;
+    task: Option<&str>,
+    project_id: Option<i32>,
+) -> Result<Record> {
     use super::schema::records;
-    use super::schema::tasks;
     let record = diesel::update(records::table)
         .filter(records::id.eq(record_id))
         .set(&RecordUpdate {
             started_at,
             ended_at,
-            task_id,
+            task,
+            project_id,
         })
         .returning(Record::as_returning())
         .get_result(&mut conn.0)?;
 
-    let (task, project) = tasks::table
-        .left_outer_join(projects::table)
-        .filter(tasks::id.eq(record.task_id))
-        .get_result(&mut conn.0)?;
-
-    Ok((record, (task, project)))
+    Ok(record)
 }
 
-pub type RecordTuple = (Record, (Task, Option<Project>));
+pub fn get_project_for_record(conn: &mut Conn, record_id: i32) -> Result<Project> {
+    use super::schema::projects;
+    use super::schema::records;
+
+    let project = records::table
+        .inner_join(projects::table)
+        .filter(records::id.eq(record_id))
+        .select(Project::as_select())
+        .get_result(&mut conn.0)?;
+
+    Ok(project)
+}
+
+pub type RecordTuple = (Record, Project);
 pub fn query_records(
     conn: &mut Conn,
     start_date: chrono::DateTime<chrono::Utc>,
@@ -211,10 +207,9 @@ pub fn query_records(
 ) -> Result<impl Iterator<Item = QueryResult<RecordTuple>> + '_> {
     use super::schema::projects;
     use super::schema::records;
-    use super::schema::tasks;
 
     Ok(records::table
-        .inner_join(tasks::table.left_outer_join(projects::table))
+        .inner_join(projects::table)
         .filter(
             records::ended_at
                 .gt(start_date)

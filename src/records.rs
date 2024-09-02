@@ -5,8 +5,8 @@ use chrono::{DateTime, Duration, Utc};
 use sqids::{Sqids, SqidsBuilder};
 
 use db::{
-    get_most_recent_record, insert_record, query_records, set_record_end_timestamp, update_record,
-    upsert_task, Conn,
+    get_most_recent_record, get_project_for_record, insert_record, query_records,
+    set_record_end_timestamp, update_record, upsert_project, Conn,
 };
 
 mod db;
@@ -40,15 +40,15 @@ impl<'a> Records<'a> {
         let mut records = Vec::new();
         match last_record {
             None => {}
-            Some((record, (task, project))) => {
+            Some((record, project)) => {
                 match record.ended_at.filter(|date| date <= &end_date) {
                     Some(_) => {}
                     None => {
                         set_record_end_timestamp(self.db, record.id, end_date)?;
                         records.push(Record {
                             id: sqid(record.id),
-                            task: task.name.clone(),
-                            project: project.clone().map(|p| p.name),
+                            task: record.task.clone(),
+                            project: project.name.clone(),
                             started_at: record.started_at,
                             ended_at: Some(end_date),
                         })
@@ -59,12 +59,17 @@ impl<'a> Records<'a> {
                     match record.ended_at.filter(|date| date <= &start_date) {
                         Some(_) => {}
                         None => {
-                            let record =
-                                insert_record(self.db, task.id, start_date, record.ended_at)?;
+                            let record = insert_record(
+                                self.db,
+                                &record.task,
+                                project.id,
+                                start_date,
+                                record.ended_at,
+                            )?;
                             records.push(Record {
                                 id: sqid(record.id),
-                                task: task.name,
-                                project: project.map(|p| p.name),
+                                task: record.task,
+                                project: project.name,
                                 started_at: start_date,
                                 ended_at: record.ended_at,
                             })
@@ -80,16 +85,17 @@ impl<'a> Records<'a> {
     pub fn add_record(
         &mut self,
         task_name: &str,
+        project_name: &str,
         start_date: DateTime<Utc>,
         end_date: Option<DateTime<Utc>>,
     ) -> Result<Record> {
-        let (task, project_name) = upsert_task(self.db, task_name)?;
-        let record = insert_record(self.db, task.id, start_date, end_date)?;
+        let project = upsert_project(self.db, project_name)?;
+        let record = insert_record(self.db, task_name, project.id, start_date, end_date)?;
 
         Ok(Record {
             id: sqid(record.id),
-            task: task.name,
-            project: project_name,
+            task: record.task,
+            project: project.name,
             started_at: record.started_at,
             ended_at: record.ended_at,
         })
@@ -102,10 +108,10 @@ impl<'a> Records<'a> {
     ) -> Result<Vec<Record>> {
         let records = query_records(self.db, start_date, end_date)?
             .map(|row| {
-                row.map(|(record, (task, project))| Record {
+                row.map(|(record, project)| Record {
                     id: sqid(record.id),
-                    task: task.name,
-                    project: project.map(|p| p.name),
+                    task: record.task,
+                    project: project.name,
                     started_at: record.started_at,
                     ended_at: record.ended_at,
                 })
@@ -119,30 +125,32 @@ impl<'a> Records<'a> {
     pub fn update_record(
         &mut self,
         record_id: &str,
-        start_date: Option<DateTime<Utc>>,
-        end_date: Option<DateTime<Utc>>,
-        task_name: Option<&str>,
+        started_at: Option<DateTime<Utc>>,
+        ended_at: Option<DateTime<Utc>>,
+        task: Option<&str>,
+        project_name: Option<&str>,
     ) -> Result<Record> {
         let id = desqid(record_id)?;
 
-        let task = task_name
-            .map(|task_name| upsert_task(self.db, task_name))
+        let project = project_name
+            .map(|project_name| upsert_project(self.db, project_name))
             .transpose()?;
 
-        let (record, (task, project)) = update_record(
+        let record = update_record(
             self.db,
             id,
-            start_date,
-            end_date,
-            task.map(|(task, _)| task.id),
+            started_at,
+            ended_at,
+            task,
+            project.map(|project| project.id),
         )?;
 
         Ok(Record {
             id: record_id.into(),
             started_at: record.started_at,
             ended_at: record.ended_at,
-            task: task.name,
-            project: project.map(|p| p.name),
+            task: record.task,
+            project: get_project_for_record(self.db, record.id)?.name,
         })
     }
 }
@@ -173,7 +181,7 @@ fn desqid(sqid: &str) -> Result<i32> {
 pub struct Record {
     pub id: String,
     pub task: String,
-    pub project: Option<String>,
+    pub project: String,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
 }
@@ -205,7 +213,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         let record = records
-            .add_record("hello, world", dt("10:00:00"), None)
+            .add_record("hello, world", "proj", dt("10:00:00"), None)
             .unwrap();
         assert_eq!(record.task, "hello, world");
         assert_eq!(record.started_at, dt("10:00:00"));
@@ -223,7 +231,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         let record = records
-            .add_record("hello, world", dt("10:00:00"), Some(dt("11:00:00")))
+            .add_record("hello, world", "proj", dt("10:00:00"), Some(dt("11:00:00")))
             .unwrap();
         assert_eq!(record.task, "hello, world");
         assert_eq!(record.started_at, dt("10:00:00"));
@@ -241,7 +249,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         records
-            .add_record("hello, world", dt("10:00:00"), None)
+            .add_record("hello, world", "proj", dt("10:00:00"), None)
             .unwrap();
 
         let recs = &records.complete_last_record(dt("11:00:00"), None).unwrap();
@@ -254,8 +262,12 @@ mod tests {
     fn complete_last_record_does_not_update_records_after_the_given_date() {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
-        records.add_record("abc", dt("10:00:00"), None).unwrap();
-        records.add_record("def", dt("12:00:00"), None).unwrap();
+        records
+            .add_record("abc", "proj", dt("10:00:00"), None)
+            .unwrap();
+        records
+            .add_record("def", "proj", dt("12:00:00"), None)
+            .unwrap();
 
         let recs = &records.complete_last_record(dt("11:00:00"), None).unwrap();
         assert_eq!(recs[0].task, "abc");
@@ -268,7 +280,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         records
-            .add_record("abc", dt("10:00:00"), Some(dt("11:00:00")))
+            .add_record("abc", "proj", dt("10:00:00"), Some(dt("11:00:00")))
             .unwrap();
 
         let record = records.complete_last_record(dt("11:30:00"), None).unwrap();
@@ -280,7 +292,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         records
-            .add_record("abc", dt("10:00:00"), Some(dt("11:30:00")))
+            .add_record("abc", "proj", dt("10:00:00"), Some(dt("11:30:00")))
             .unwrap();
 
         let recs = &records.complete_last_record(dt("11:00:00"), None).unwrap();
@@ -295,7 +307,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         records
-            .add_record("abc", dt("10:00:00"), Some(dt("15:00:00")))
+            .add_record("abc", "proj", dt("10:00:00"), Some(dt("15:00:00")))
             .unwrap();
 
         let record = records
@@ -315,7 +327,9 @@ mod tests {
     ) {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
-        records.add_record("abc", dt("10:00:00"), None).unwrap();
+        records
+            .add_record("abc", "proj", dt("10:00:00"), None)
+            .unwrap();
 
         let record = records
             .complete_last_record(dt("11:00:00"), Some(dt("12:00:00")))
@@ -334,7 +348,7 @@ mod tests {
         let mut conn = establish_connection(":memory:").unwrap();
         let mut records = Records::new(&mut conn);
         let record = records
-            .add_record("abc", dt("10:00:00"), Some(dt("12:00:00")))
+            .add_record("abc", "proj", dt("10:00:00"), Some(dt("12:00:00")))
             .unwrap();
 
         let updated = records
@@ -343,6 +357,7 @@ mod tests {
                 Some(dt("11:00:00")),
                 None,
                 Some("new task name"),
+                Some("new proj"),
             )
             .unwrap();
 
@@ -350,13 +365,14 @@ mod tests {
         assert_eq!(updated.started_at, dt("11:00:00"));
         assert_eq!(updated.ended_at, Some(dt("12:00:00")));
         assert_eq!(updated.task, "new task name");
+        assert_eq!(updated.project, "new proj");
     }
 
     #[test]
     fn duration_returns_duration_of_two_records() {
         let record = Record {
             task: "task".into(),
-            project: Some("project".into()),
+            project: "project".into(),
             id: "12345".into(),
             started_at: dt("10:00:00"),
             ended_at: Some(dt("12:00:00")),
@@ -372,7 +388,7 @@ mod tests {
     fn duration_uses_current_time_if_task_has_not_ended() {
         let record = Record {
             task: "task".into(),
-            project: Some("project".into()),
+            project: "project".into(),
             id: "12345".into(),
             started_at: dt("10:00:00"),
             ended_at: None,

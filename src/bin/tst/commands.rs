@@ -43,7 +43,7 @@ pub fn go(config: Config, go: Go) -> Result<()> {
         }
     }
 
-    recs.add_record(&go.name, start_date, end_date)?;
+    recs.add_record(&go.name, &go.project, start_date, end_date)?;
     match end_date {
         None => log::info!("Added record for {} starting at {start_date}", go.name),
         Some(end_date) => {
@@ -136,7 +136,13 @@ pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Resul
         .transpose()?;
     let task_name = edit.task;
 
-    let record = recs.update_record(&edit.record_id, start_date, end_date, task_name.as_deref())?;
+    let record = recs.update_record(
+        &edit.record_id,
+        start_date,
+        end_date,
+        task_name.as_deref(),
+        None,
+    )?;
 
     log::info!("Record updated: {record:?}");
 

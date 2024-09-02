@@ -45,7 +45,7 @@ fn print_granularity_all(
             " {:>14}  ({:5})  {:10}  {}",
             duration_to_string(record.duration(now)),
             &record.id[..5],
-            record.project.as_deref().unwrap_or(""),
+            record.project,
             record.task,
         )?;
     }
@@ -98,7 +98,7 @@ fn print_daily_line(
     writer: &mut impl Write,
     date: Option<DateTime<Utc>>,
     duration: Duration,
-    project: Option<String>,
+    project: String,
     task: &str,
 ) -> Result<()> {
     match date {
@@ -109,7 +109,7 @@ fn print_daily_line(
         writer,
         "{:>14}  {:10}  {}",
         duration_to_string(duration),
-        project.as_deref().unwrap_or(""),
+        project,
         task,
     )?;
     Ok(())
@@ -217,7 +217,7 @@ mod tests {
         let record = Record {
             id: "hello".into(),
             task: "blub".into(),
-            project: Some("blob".into()),
+            project: "blob".into(),
             started_at: dt("12:23:34"),
             ended_at: Some(dt("13:34:45")),
         };
@@ -236,7 +236,7 @@ mod tests {
         let record = Record {
             id: "hello".into(),
             task: "blub".into(),
-            project: Some("blob".into()),
+            project: "blob".into(),
             started_at: dt("12:23:34"),
             ended_at: None,
         };
@@ -256,14 +256,14 @@ mod tests {
             Record {
                 id: "hello".into(),
                 task: "blub".into(),
-                project: Some("blob".into()),
+                project: "blob".into(),
                 started_at: dt("12:23:34"),
                 ended_at: Some(dt("13:34:45")),
             },
             Record {
                 id: "hello".into(),
                 task: "blub".into(),
-                project: Some("blob".into()),
+                project: "blob".into(),
                 started_at: dt("14:45:56"),
                 ended_at: None,
             },

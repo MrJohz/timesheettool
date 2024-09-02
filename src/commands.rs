@@ -74,10 +74,15 @@ pub enum Commands {
 
 #[derive(Args, Debug)]
 pub struct Go {
+    /// project
+    ///
+    /// Provides the project name that this record should be logged under.
+    /// If the project doesn't exist, it will be created automatically.
+    pub project: String,
+
     /// task name
     ///
-    /// Provides the task name that this record should be logged under.  If
-    /// the tag name doesn't exist yet in the database, it will be created.
+    /// Provides the task name that this record should be logged under.
     pub name: String,
 
     /// record start time
