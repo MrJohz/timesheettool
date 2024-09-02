@@ -13,6 +13,7 @@ pub fn print(
 ) -> Result<()> {
     match granularity {
         Granularity::All => print_granularity_all(writer, now, records)?,
+        Granularity::Daily => print_granularity_daily(writer, now, records)?,
         _ => unimplemented!("not yet implemented - other granularities like {granularity:?}"),
     }
     Ok(())
@@ -24,6 +25,10 @@ fn print_granularity_all(
     records: Vec<Record>,
 ) -> Result<()> {
     let mut last_date = None;
+    writeln!(
+        writer,
+        "Date           Times                     Duration  ( id  )  Project     Task"
+    )?;
     for record in records {
         if Some(record.started_at.date_naive()) != last_date {
             last_date = Some(record.started_at.date_naive());
@@ -38,12 +43,75 @@ fn print_granularity_all(
         writeln!(
             writer,
             " {:>14}  ({:5})  {:10}  {}",
-            duration(record.duration(now)),
+            duration_to_string(record.duration(now)),
             &record.id[..5],
             record.project.as_deref().unwrap_or(""),
             record.task,
         )?;
     }
+    Ok(())
+}
+
+fn print_granularity_daily(
+    writer: &mut impl Write,
+    now: DateTime<Utc>,
+    records: Vec<Record>,
+) -> Result<()> {
+    writeln!(writer, "Date               Duration  Project     Task")?;
+
+    let mut records = records.into_iter().peekable();
+    while let Some(record) = records.next() {
+        let mut printing_date = Some(record.started_at);
+        let date = record.started_at.date_naive();
+        let mut records_vec = vec![record];
+        while let Some(record) = records.peek() {
+            if record.started_at.date_naive() != date {
+                break;
+            }
+
+            records_vec.push(records.next().unwrap());
+        }
+
+        records_vec.sort_unstable_by(|a, b| a.task.cmp(&b.task));
+        let mut records = records_vec.into_iter().peekable();
+        while let Some(record) = records.next() {
+            let task = &record.task;
+            let mut duration = record.duration(now);
+            while let Some(record) = records.peek() {
+                if &record.task != task {
+                    break;
+                }
+
+                duration += record.duration(now);
+                records.next();
+            }
+
+            print_daily_line(writer, printing_date, duration, record.project, task)?;
+            printing_date = None;
+        }
+    }
+
+    Ok(())
+}
+
+fn print_daily_line(
+    writer: &mut impl Write,
+    date: Option<DateTime<Utc>>,
+    duration: Duration,
+    project: Option<String>,
+    task: &str,
+) -> Result<()> {
+    match date {
+        Some(date) => print_date(writer, date)?,
+        None => write!(writer, "             ")?,
+    }
+    writeln!(
+        writer,
+        "{:>14}  {:10}  {}",
+        duration_to_string(duration),
+        project.as_deref().unwrap_or(""),
+        task,
+    )?;
     Ok(())
 }
 
@@ -55,7 +123,7 @@ fn print_date(writer: &mut impl Write, started_at: DateTime<Utc>) -> Result<()> 
     Ok(())
 }
 
-fn duration(mut duration: Duration) -> String {
+fn duration_to_string(mut duration: Duration) -> String {
     let mut buf = String::new();
     let days = duration.num_days();
     if days > 0 {

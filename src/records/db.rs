@@ -221,5 +221,6 @@ pub fn query_records(
                 .or(records::ended_at.is_null()),
         )
         .filter(records::started_at.lt(end_date))
+        .order(records::started_at)
         .load_iter(&mut conn.0)?)
 }
