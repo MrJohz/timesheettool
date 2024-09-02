@@ -227,7 +227,10 @@ mod tests {
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,
-            "Su 12 May '24  12:23:34-13:34:45       1h 11m 11s  (hello)  blob        blub\n"
+            "
+Date           Times                     Duration  ( id  )  Project     Task
+Su 12 May '24  12:23:34-13:34:45       1h 11m 11s  (hello)  blob        blub\n"
+                .trim_start()
         );
     }
 
@@ -246,7 +249,10 @@ mod tests {
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,
-            "Su 12 May '24  12:23:34-               1h 36m 26s  (hello)  blob        blub\n"
+            "
+Date           Times                     Duration  ( id  )  Project     Task
+Su 12 May '24  12:23:34-               1h 36m 26s  (hello)  blob        blub\n"
+                .trim_start()
         );
     }
 
@@ -275,6 +281,7 @@ mod tests {
         assert_eq!(
             result,
             "
+Date           Times                     Duration  ( id  )  Project     Task
 Su 12 May '24  12:23:34-13:34:45       1h 11m 11s  (hello)  blob        blub
                14:45:56-                   14m 4s  (hello)  blob        blub\n"
                 .trim_start()
