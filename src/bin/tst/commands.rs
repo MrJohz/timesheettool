@@ -1,16 +1,16 @@
 use anyhow::{anyhow, Result};
-use chrono::{SubsecRound as _, Utc};
+use chrono::{Duration, SubsecRound as _, Utc};
 use timesheettool::{
-    commands::{Go, ListRecords, Stop},
+    commands::{Go, Granularity, ListRecords, Stop},
     config::Config,
-    db,
     parse::{parse_date, parse_relative_date},
+    print::print,
     records,
 };
 use tzfile::Tz;
 
 pub fn go(config: Config, go: Go) -> Result<()> {
-    let mut conn = db::establish_connection(&config.database_path)?;
+    let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
     let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
@@ -58,7 +58,7 @@ pub fn go(config: Config, go: Go) -> Result<()> {
 }
 
 pub fn stop(config: Config, stop: Stop) -> Result<()> {
-    let mut conn = db::establish_connection(&config.database_path)?;
+    let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
     let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
@@ -82,21 +82,44 @@ pub fn stop(config: Config, stop: Stop) -> Result<()> {
 }
 
 pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
-    let mut conn = db::establish_connection(&config.database_path)?;
+    let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
 
     let local_tz = Tz::local()?;
-    let today = Utc::now().naive_local().date();
+    let now = Utc::now();
+    let today = now.naive_local().date();
     let start = parse_relative_date(&list_records.since, &local_tz, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.since))?;
     let end = parse_relative_date(&list_records.until, &local_tz, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.until))?;
-    dbg!(recs.list_records(start, end)?);
+
+    // TODO: this logic is a bit flimsy.  I think it needs to be based on the unit used by the user in parse_relative_date,
+    // i.e. if I write a request in weeks, then I want to see daily granularity, and if I write a request in months then I
+    // want to see monthly granularity?
+    let granularity = if list_records.granularity != Granularity::Auto {
+        list_records.granularity
+    } else if end - start <= Duration::days(6) {
+        Granularity::All
+    } else if end - start <= Duration::weeks(4) {
+        Granularity::Daily
+    } else if end - start <= Duration::days(60) {
+        Granularity::Weekly
+    } else {
+        Granularity::Monthly
+    };
+
+    let mut stdout = std::io::stdout().lock();
+    print(
+        &mut stdout,
+        now,
+        granularity,
+        recs.list_records(start, end)?,
+    )?;
     Ok(())
 }
 
 pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Result<()> {
-    let mut conn = db::establish_connection(&config.database_path)?;
+    let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
     let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();

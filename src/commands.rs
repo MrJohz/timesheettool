@@ -143,7 +143,7 @@ pub struct ListRecords {
     pub granularity: Granularity,
 }
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(ValueEnum, Debug, Clone, PartialEq, Eq)]
 pub enum Granularity {
     /// automatically aggregate records
     Auto,

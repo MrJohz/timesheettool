@@ -1,13 +1,18 @@
 use std::sync::LazyLock;
 
 use anyhow::{anyhow, bail, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sqids::{Sqids, SqidsBuilder};
 
-use crate::db::{
+use db::{
     get_most_recent_record, insert_record, query_records, set_record_end_timestamp, update_record,
     upsert_task, Conn,
 };
+
+mod db;
+mod schema;
+
+pub use db::establish_connection;
 
 static SQIDS: LazyLock<Sqids> = LazyLock::new(|| {
     SqidsBuilder::new()
@@ -173,11 +178,17 @@ pub struct Record {
     pub ended_at: Option<DateTime<Utc>>,
 }
 
+impl Record {
+    pub fn duration(&self, now: DateTime<Utc>) -> Duration {
+        self.ended_at.unwrap_or(now) - self.started_at
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
 
-    use crate::db::establish_connection;
+    use db::establish_connection;
 
     use super::*;
 
@@ -339,5 +350,37 @@ mod tests {
         assert_eq!(updated.started_at, dt("11:00:00"));
         assert_eq!(updated.ended_at, Some(dt("12:00:00")));
         assert_eq!(updated.task, "new task name");
+    }
+
+    #[test]
+    fn duration_returns_duration_of_two_records() {
+        let record = Record {
+            task: "task".into(),
+            project: Some("project".into()),
+            id: "12345".into(),
+            started_at: dt("10:00:00"),
+            ended_at: Some(dt("12:00:00")),
+        };
+
+        assert_eq!(
+            record.duration(dt("15:00:00")),
+            Duration::seconds(2 * 60 * 60)
+        )
+    }
+
+    #[test]
+    fn duration_uses_current_time_if_task_has_not_ended() {
+        let record = Record {
+            task: "task".into(),
+            project: Some("project".into()),
+            id: "12345".into(),
+            started_at: dt("10:00:00"),
+            ended_at: None,
+        };
+
+        assert_eq!(
+            record.duration(dt("15:00:00")),
+            Duration::seconds(5 * 60 * 60)
+        );
     }
 }

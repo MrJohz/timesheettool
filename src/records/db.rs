@@ -69,7 +69,7 @@ fn run_migrations(db: &mut SqliteConnection) -> Result<()> {
 }
 
 #[derive(Queryable, Identifiable, Selectable, Debug, PartialEq, Clone)]
-#[diesel(table_name=crate::schema::projects)]
+#[diesel(table_name=super::schema::projects)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Project {
     pub id: i32,
@@ -77,7 +77,7 @@ pub struct Project {
 }
 
 #[derive(Queryable, Identifiable, Selectable, Associations, Debug, PartialEq)]
-#[diesel(table_name=crate::schema::tasks)]
+#[diesel(table_name=super::schema::tasks)]
 #[diesel(belongs_to(Project))]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Task {
@@ -87,7 +87,7 @@ pub struct Task {
 }
 
 #[derive(Queryable, Identifiable, Selectable, Associations, Debug, PartialEq)]
-#[diesel(table_name = crate::schema::records)]
+#[diesel(table_name = super::schema::records)]
 #[diesel(belongs_to(Task))]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Record {
@@ -98,7 +98,7 @@ pub struct Record {
 }
 
 #[derive(AsChangeset)]
-#[diesel(table_name = crate::schema::records)]
+#[diesel(table_name = super::schema::records)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct RecordUpdate {
     pub task_id: Option<i32>,
@@ -107,8 +107,8 @@ struct RecordUpdate {
 }
 
 pub fn upsert_task(conn: &mut Conn, name: &str) -> Result<(Task, Option<String>)> {
-    use crate::schema::projects;
-    use crate::schema::tasks;
+    use super::schema::projects;
+    use super::schema::tasks;
     let task = diesel::insert_into(tasks::table)
         .values(tasks::name.eq(name))
         .on_conflict(tasks::name)
@@ -130,9 +130,9 @@ pub fn get_most_recent_record(
     conn: &mut Conn,
     before: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<RecordTuple>> {
-    use crate::schema::projects;
-    use crate::schema::records;
-    use crate::schema::tasks;
+    use super::schema::projects;
+    use super::schema::records;
+    use super::schema::tasks;
 
     Ok(records::table
         .inner_join(tasks::table.left_outer_join(projects::table))
@@ -147,7 +147,7 @@ pub fn set_record_end_timestamp(
     record_id: i32,
     timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<()> {
-    use crate::schema::records;
+    use super::schema::records;
     let count = diesel::update(records::table.filter(records::id.eq(record_id)))
         .set(records::ended_at.eq(Some(timestamp)))
         .execute(&mut conn.0)?;
@@ -163,7 +163,7 @@ pub fn insert_record(
     start_date: chrono::DateTime<chrono::Utc>,
     end_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Record> {
-    use crate::schema::records;
+    use super::schema::records;
     let record = diesel::insert_into(records::table)
         .values((
             records::task_id.eq(task_id),
@@ -182,9 +182,9 @@ pub fn update_record(
     ended_at: Option<chrono::DateTime<chrono::Utc>>,
     task_id: Option<i32>,
 ) -> Result<RecordTuple> {
-    use crate::schema::projects;
-    use crate::schema::records;
-    use crate::schema::tasks;
+    use super::schema::projects;
+    use super::schema::records;
+    use super::schema::tasks;
     let record = diesel::update(records::table)
         .filter(records::id.eq(record_id))
         .set(&RecordUpdate {
@@ -209,9 +209,9 @@ pub fn query_records(
     start_date: chrono::DateTime<chrono::Utc>,
     end_date: chrono::DateTime<chrono::Utc>,
 ) -> Result<impl Iterator<Item = QueryResult<RecordTuple>> + '_> {
-    use crate::schema::projects;
-    use crate::schema::records;
-    use crate::schema::tasks;
+    use super::schema::projects;
+    use super::schema::records;
+    use super::schema::tasks;
 
     Ok(records::table
         .inner_join(tasks::table.left_outer_join(projects::table))
