@@ -7,7 +7,20 @@ use diesel::{prelude::*, sql_query};
 use diesel::{Connection, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
-pub fn establish_connection(database_url: impl AsRef<Path>) -> Result<SqliteConnection> {
+pub struct Conn(SqliteConnection);
+
+impl Drop for Conn {
+    fn drop(&mut self) {
+        // if this fails, we don't really care at this point
+        // the goal is just to have the optimize pragma run when the program
+        // ends, so that it can potentially update some of the tables based on
+        // the queries used during this session.
+        // See: https://sqlite.org/pragma.html#pragma_optimize
+        let _ = sql_query("PRAGMA optimize;").execute(&mut self.0);
+    }
+}
+
+pub fn establish_connection(database_url: impl AsRef<Path>) -> Result<Conn> {
     let database_url = database_url.as_ref();
 
     // The database and potentially its parent folders may not yet exist.  SQLite can handle
@@ -25,28 +38,34 @@ pub fn establish_connection(database_url: impl AsRef<Path>) -> Result<SqliteConn
 
     log::trace!("Connecting to SQLite DB at {database_url}");
     let mut conn = SqliteConnection::establish(&database_url)?;
-    sql_query("PRAGMA application_id = 0x9b34493a;PRAGMA foreign_keys = TRUE;PRAGMA optimize;")
-        .execute(&mut conn)?;
+    sql_query(
+        "PRAGMA application_id = 0x9b34493a;
+        PRAGMA foreign_keys = TRUE;
+        PRAGMA ignore_check_constraints = FALSE;",
+    )
+    .execute(&mut conn)?;
     log::trace!("Connection to SQLite DB successful");
     run_migrations(&mut conn)?;
-    Ok(conn)
+    Ok(Conn(conn))
 }
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 fn run_migrations(db: &mut SqliteConnection) -> Result<()> {
-    match db.run_pending_migrations(MIGRATIONS) {
-        Ok(migrations) => {
-            if !migrations.is_empty() {
-                log::trace!(
-                    "Ran {} migration(s) to update SQLite DB schema to latest version",
-                    migrations.len()
-                );
-            }
-            Ok(())
-        }
+    let migrated = match db.run_pending_migrations(MIGRATIONS) {
+        Ok(migrations) => migrations.len(),
         Err(_) => anyhow::bail!("Could not update database to the latest version"),
+    };
+
+    if migrated > 0 {
+        // a migration has occurred, so the data may be in a different format to when the last
+        // analysis was done.  Run optimize now to update that analysis.
+        // See: https://sqlite.org/pragma.html#pragma_optimize
+        sql_query("PRAGMA optimize;").execute(db)?;
+        log::trace!("Ran {migrated} migration(s) to update SQLite DB schema to latest version",);
     }
+
+    Ok(())
 }
 
 #[derive(Queryable, Identifiable, Selectable, Debug, PartialEq, Clone)]
@@ -87,7 +106,7 @@ struct RecordUpdate {
     pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub fn upsert_task(conn: &mut SqliteConnection, name: &str) -> Result<(Task, Option<String>)> {
+pub fn upsert_task(conn: &mut Conn, name: &str) -> Result<(Task, Option<String>)> {
     use crate::schema::projects;
     use crate::schema::tasks;
     let task = diesel::insert_into(tasks::table)
@@ -98,17 +117,17 @@ pub fn upsert_task(conn: &mut SqliteConnection, name: &str) -> Result<(Task, Opt
         // the returning clause to fetch the task ID and other details.
         .set(tasks::name.eq(excluded(tasks::name)))
         .returning(Task::as_returning())
-        .get_result(conn)?;
+        .get_result(&mut conn.0)?;
     let project_name = projects::table
         .filter(projects::id.nullable().eq(task.project_id))
         .select(projects::name)
-        .get_result(conn)
+        .get_result(&mut conn.0)
         .optional()?;
     Ok((task, project_name))
 }
 
 pub fn get_most_recent_record(
-    conn: &mut SqliteConnection,
+    conn: &mut Conn,
     before: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<RecordTuple>> {
     use crate::schema::projects;
@@ -119,19 +138,19 @@ pub fn get_most_recent_record(
         .inner_join(tasks::table.left_outer_join(projects::table))
         .filter(records::started_at.lt(before))
         .order(records::started_at.desc())
-        .first(conn)
+        .first(&mut conn.0)
         .optional()?)
 }
 
 pub fn set_record_end_timestamp(
-    conn: &mut SqliteConnection,
+    conn: &mut Conn,
     record_id: i32,
     timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<()> {
     use crate::schema::records;
     let count = diesel::update(records::table.filter(records::id.eq(record_id)))
         .set(records::ended_at.eq(Some(timestamp)))
-        .execute(conn)?;
+        .execute(&mut conn.0)?;
     if count < 1 {
         bail!("No record found with id {record_id}")
     }
@@ -139,7 +158,7 @@ pub fn set_record_end_timestamp(
 }
 
 pub fn insert_record(
-    conn: &mut SqliteConnection,
+    conn: &mut Conn,
     task_id: i32,
     start_date: chrono::DateTime<chrono::Utc>,
     end_date: Option<chrono::DateTime<chrono::Utc>>,
@@ -152,12 +171,12 @@ pub fn insert_record(
             records::ended_at.eq(end_date),
         ))
         .returning(Record::as_returning())
-        .get_result(conn)?;
+        .get_result(&mut conn.0)?;
     Ok(record)
 }
 
 pub fn update_record(
-    conn: &mut SqliteConnection,
+    conn: &mut Conn,
     record_id: i32,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
     ended_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -174,19 +193,19 @@ pub fn update_record(
             task_id,
         })
         .returning(Record::as_returning())
-        .get_result(conn)?;
+        .get_result(&mut conn.0)?;
 
     let (task, project) = tasks::table
         .left_outer_join(projects::table)
         .filter(tasks::id.eq(record.task_id))
-        .get_result(conn)?;
+        .get_result(&mut conn.0)?;
 
     Ok((record, (task, project)))
 }
 
 pub type RecordTuple = (Record, (Task, Option<Project>));
 pub fn query_records(
-    conn: &mut SqliteConnection,
+    conn: &mut Conn,
     start_date: chrono::DateTime<chrono::Utc>,
     end_date: chrono::DateTime<chrono::Utc>,
 ) -> Result<impl Iterator<Item = QueryResult<RecordTuple>> + '_> {
@@ -202,5 +221,5 @@ pub fn query_records(
                 .or(records::ended_at.is_null()),
         )
         .filter(records::started_at.lt(end_date))
-        .load_iter(conn)?)
+        .load_iter(&mut conn.0)?)
 }

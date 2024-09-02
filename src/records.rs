@@ -2,28 +2,27 @@ use std::sync::LazyLock;
 
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
-use diesel::SqliteConnection;
 use sqids::{Sqids, SqidsBuilder};
 
 use crate::db::{
     get_most_recent_record, insert_record, query_records, set_record_end_timestamp, update_record,
-    upsert_task,
+    upsert_task, Conn,
 };
 
 static SQIDS: LazyLock<Sqids> = LazyLock::new(|| {
     SqidsBuilder::new()
-        .alphabet("abcdefghijklmnopqrstuvwxyz".chars().collect())
+        .alphabet(('a'..='z').collect())
         .min_length(5)
         .build()
         .unwrap()
 });
 
 pub struct Records<'a> {
-    db: &'a mut SqliteConnection,
+    db: &'a mut Conn,
 }
 
 impl<'a> Records<'a> {
-    pub fn new(db: &'a mut SqliteConnection) -> Self {
+    pub fn new(db: &'a mut Conn) -> Self {
         Self { db }
     }
 
