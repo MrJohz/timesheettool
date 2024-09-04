@@ -70,6 +70,9 @@ pub enum Commands {
     /// can break some of the assumptions made by timesheettool, so use this
     /// with care.
     Edit(Edit),
+
+    /// View overtime statistics
+    Overtime(Overtime),
 }
 
 #[derive(Args, Debug)]
@@ -146,6 +149,14 @@ pub struct ListRecords {
     /// here.  Use "All" to show each individual record.
     #[arg(short = 'g', long, default_value = "auto")]
     pub granularity: Granularity,
+
+    /// rounding unit
+    ///
+    /// Rounds hours worked in a project per day to the next largest multiple
+    /// of this value.  Useful for having a concept of minimum billable time
+    /// units.  Rounding occurs per project, and per day.
+    #[arg(short = 'r', long, default_value = "30m")]
+    pub rounding: String,
 }
 
 #[derive(ValueEnum, Debug, Clone, PartialEq, Eq)]
@@ -183,4 +194,13 @@ pub struct Edit {
     /// the tag name doesn't exist yet in the database, it will be created.
     #[arg(short = 't', long)]
     pub task: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct Overtime {
+    /// hours worked per day
+    ///
+    /// The number of hours in a conventional work day.  Defaults to 8.
+    #[arg(long, default_value = "8.0")]
+    pub hours: f64,
 }

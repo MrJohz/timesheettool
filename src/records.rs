@@ -6,7 +6,7 @@ use sqids::{Sqids, SqidsBuilder};
 
 use db::{
     get_most_recent_record, get_project_for_record, insert_record, query_records,
-    set_record_end_timestamp, update_record, upsert_project, Conn,
+    query_records_all, set_record_end_timestamp, update_record, upsert_project, Conn,
 };
 
 mod db;
@@ -152,6 +152,21 @@ impl<'a> Records<'a> {
             task: record.task,
             project: get_project_for_record(self.db, record.id)?.name,
         })
+    }
+
+    pub fn all_records(&mut self) -> Result<impl Iterator<Item = Result<Record>> + '_> {
+        let records = query_records_all(self.db)?.map(|row| {
+            row.map(|(record, project)| Record {
+                id: sqid(record.id),
+                task: record.task,
+                project: project.name,
+                started_at: record.started_at,
+                ended_at: record.ended_at,
+            })
+            .map_err(|err| anyhow::anyhow!(err))
+        });
+
+        Ok(records)
     }
 }
 

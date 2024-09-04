@@ -219,3 +219,15 @@ pub fn query_records(
         .order(records::started_at)
         .load_iter(&mut conn.0)?)
 }
+
+pub fn query_records_all(
+    conn: &mut Conn,
+) -> Result<impl Iterator<Item = QueryResult<RecordTuple>> + '_> {
+    use super::schema::projects;
+    use super::schema::records;
+
+    Ok(records::table
+        .inner_join(projects::table)
+        .order(records::started_at)
+        .load_iter(&mut conn.0)?)
+}

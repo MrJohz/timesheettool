@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
-use chrono::{Duration, Local, SubsecRound as _, Utc};
+use chrono::{Duration, Local, NaiveDate, SubsecRound as _, Utc};
 use timesheettool::{
     commands::{Go, Granularity, ListRecords, Stop},
     config::Config,
@@ -11,7 +13,7 @@ use timesheettool::{
 pub fn go(config: Config, go: Go) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let today = Utc::now().naive_local().date();
+    let today = Local::now().naive_local().date();
     let start_date = go
         .start
         .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse start time {dt}")))
@@ -56,7 +58,7 @@ pub fn go(config: Config, go: Go) -> Result<()> {
 pub fn stop(config: Config, stop: Stop) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let today = Utc::now().naive_local().date();
+    let today = Local::now().naive_local().date();
     let end_date = stop
         .end
         .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse end time {dt}")))
@@ -81,7 +83,7 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
     let mut recs = records::Records::new(&mut conn);
 
     let now = Utc::now();
-    let today = now.naive_local().date();
+    let today = Local::now().naive_local().date();
     let start = parse_relative_date(&list_records.since, &Local, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.since))?;
     let end = parse_relative_date(&list_records.until, &Local, today)
@@ -116,7 +118,7 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
 pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let today = Utc::now().naive_local().date();
+    let today = Local::now().naive_local().date();
 
     let start_date = edit
         .start
@@ -139,4 +141,62 @@ pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Resul
     log::info!("Record updated: {record:?}");
 
     Ok(())
+}
+
+pub(crate) fn overtime(config: Config, overtime: timesheettool::commands::Overtime) -> Result<()> {
+    let mut conn = records::establish_connection(&config.database_path)?;
+    let mut recs = records::Records::new(&mut conn);
+
+    let now = Utc::now();
+
+    let mut difference = 0.0;
+    let mut seconds_for_day = HashMap::new();
+    let mut day = None;
+    for record in recs.all_records()? {
+        let record = record?;
+        let rec_day = record.started_at.with_timezone(&Local).date_naive();
+        if Some(rec_day) != day {
+            if let Some(day) = day {
+                print_overtime(&mut difference, &mut seconds_for_day, &day, overtime.hours);
+            }
+
+            day = Some(rec_day);
+        }
+
+        let seconds = record.duration(now).num_seconds();
+        seconds_for_day
+            .entry(record.project)
+            .and_modify(|e| *e += seconds)
+            .or_insert(seconds);
+    }
+
+    if let Some(day) = day {
+        print_overtime(&mut difference, &mut seconds_for_day, &day, overtime.hours);
+    }
+
+    Ok(())
+}
+
+fn print_overtime(
+    difference: &mut f64,
+    seconds_for_day: &mut HashMap<String, i64>,
+    day: &NaiveDate,
+    hours_for_day: f64,
+) {
+    let hours = seconds_for_day
+        .drain()
+        .map(|(_, value)| round_to_next(value, 30 * 60) as f64)
+        .sum::<f64>()
+        / (60.0 * 60.0);
+    *difference += hours - hours_for_day;
+    println!("Hours worked for day {day}: {hours:.2}   (balance: {difference:+.2})");
+}
+
+fn round_to_next(value: i64, unit: i64) -> i64 {
+    let remainder = value % unit;
+    if remainder == 0 {
+        value
+    } else {
+        value + unit - remainder
+    }
 }
