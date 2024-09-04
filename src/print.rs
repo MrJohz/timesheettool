@@ -1,4 +1,4 @@
-use std::{fmt::Display, io::Write};
+use std::{collections::HashSet, fmt::Display, io::Write};
 
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike, Utc};
@@ -91,21 +91,28 @@ where
             records_vec.push(records.next().unwrap());
         }
 
-        records_vec.sort_unstable_by(|a, b| a.task.cmp(&b.task));
+        records_vec.sort_unstable_by(|a, b| a.project.cmp(&b.task).reverse());
         let mut records = records_vec.into_iter().peekable();
         while let Some(record) = records.next() {
-            let task = &record.task;
+            let project = &record.project;
+            let mut tasks = HashSet::new();
+            tasks.insert(record.task.clone());
             let mut duration = record.duration(now);
             while let Some(record) = records.peek() {
-                if &record.task != task {
+                if &record.project != project {
                     break;
                 }
 
                 duration += record.duration(now);
+                tasks.insert(record.task.clone());
                 records.next();
             }
 
-            print_daily_line(writer, printing_date, duration, record.project, task)?;
+            let mut tasks = tasks.into_iter().collect::<Vec<_>>();
+            tasks.sort_unstable();
+            let tasks = tasks.join(", ");
+
+            print_daily_line(writer, printing_date, duration, record.project, &tasks)?;
             printing_date = None;
         }
     }
