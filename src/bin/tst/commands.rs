@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{Duration, SubsecRound as _, Utc};
+use chrono::{Duration, Local, SubsecRound as _, Utc};
 use timesheettool::{
     commands::{Go, Granularity, ListRecords, Stop},
     config::Config,
@@ -7,22 +7,18 @@ use timesheettool::{
     print::print,
     records,
 };
-use tzfile::Tz;
 
 pub fn go(config: Config, go: Go) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
     let start_date = go
         .start
-        .map(|dt| {
-            parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse start time {dt}"))
-        })
+        .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse start time {dt}")))
         .unwrap_or_else(|| Ok(Utc::now().round_subsecs(0)))?;
     let end_date = go
         .end
-        .map(|dt| parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse end time {dt}")))
+        .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse end time {dt}")))
         .transpose()?;
 
     if !go.allow_overlap {
@@ -60,11 +56,10 @@ pub fn go(config: Config, go: Go) -> Result<()> {
 pub fn stop(config: Config, stop: Stop) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
     let end_date = stop
         .end
-        .map(|dt| parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse end time {dt}")))
+        .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse end time {dt}")))
         .unwrap_or_else(|| Ok(Utc::now().round_subsecs(0)))?;
 
     let updated = recs.complete_last_record(end_date, None)?;
@@ -85,12 +80,11 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
 
-    let local_tz = Tz::local()?;
     let now = Utc::now();
     let today = now.naive_local().date();
-    let start = parse_relative_date(&list_records.since, &local_tz, today)
+    let start = parse_relative_date(&list_records.since, &Local, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.since))?;
-    let end = parse_relative_date(&list_records.until, &local_tz, today)
+    let end = parse_relative_date(&list_records.until, &Local, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.until))?;
 
     // TODO: this logic is a bit flimsy.  I think it needs to be based on the unit used by the user in parse_relative_date,
@@ -114,6 +108,7 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
         now,
         granularity,
         recs.list_records(start, end)?,
+        &Local,
     )?;
     Ok(())
 }
@@ -121,18 +116,15 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
 pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
-    let local_tz = Tz::local()?;
     let today = Utc::now().naive_local().date();
 
     let start_date = edit
         .start
-        .map(|dt| {
-            parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse start time {dt}"))
-        })
+        .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse start time {dt}")))
         .transpose()?;
     let end_date = edit
         .end
-        .map(|dt| parse_date(&dt, &local_tz, today).ok_or(anyhow!("could not parse end time {dt}")))
+        .map(|dt| parse_date(&dt, &Local, today).ok_or(anyhow!("could not parse end time {dt}")))
         .transpose()?;
     let task_name = edit.task;
 

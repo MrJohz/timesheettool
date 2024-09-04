@@ -1,44 +1,56 @@
-use std::io::Write;
+use std::{fmt::Display, io::Write};
 
 use anyhow::Result;
-use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike, Utc};
 
 use crate::{commands::Granularity, records::Record};
 
-pub fn print(
+pub fn print<Tz>(
     writer: &mut impl Write,
     now: DateTime<Utc>,
     granularity: Granularity,
     records: Vec<Record>,
-) -> Result<()> {
+    tz: &Tz,
+) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     match granularity {
-        Granularity::All => print_granularity_all(writer, now, records)?,
-        Granularity::Daily => print_granularity_daily(writer, now, records)?,
+        Granularity::All => print_granularity_all(writer, now, records, tz)?,
+        Granularity::Daily => print_granularity_daily(writer, now, records, tz)?,
         _ => unimplemented!("not yet implemented - other granularities like {granularity:?}"),
     }
     Ok(())
 }
 
-fn print_granularity_all(
+fn print_granularity_all<Tz>(
     writer: &mut impl Write,
     now: DateTime<Utc>,
     records: Vec<Record>,
-) -> Result<()> {
+    tz: &Tz,
+) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     let mut last_date = None;
     writeln!(
         writer,
         "Date           Times                     Duration  ( id  )  Project     Task"
     )?;
     for record in records {
-        if Some(record.started_at.date_naive()) != last_date {
-            last_date = Some(record.started_at.date_naive());
-            print_date(writer, record.started_at)?;
+        let started_at = record.started_at.with_timezone(tz);
+        if Some(started_at.date_naive()) != last_date {
+            last_date = Some(started_at.date_naive());
+            print_date(writer, &started_at)?;
         } else {
             write!(writer, "             ")?;
         }
 
         write!(writer, "  ")?;
-        print_times(writer, record.started_at, record.ended_at)?;
+        let ended_at = record.ended_at.map(|e| e.with_timezone(tz));
+        print_times(writer, &started_at, &ended_at)?;
 
         writeln!(
             writer,
@@ -52,20 +64,27 @@ fn print_granularity_all(
     Ok(())
 }
 
-fn print_granularity_daily(
+fn print_granularity_daily<Tz>(
     writer: &mut impl Write,
     now: DateTime<Utc>,
     records: Vec<Record>,
-) -> Result<()> {
+    tz: &Tz,
+) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     writeln!(writer, "Date               Duration  Project     Task")?;
 
     let mut records = records.into_iter().peekable();
     while let Some(record) = records.next() {
-        let mut printing_date = Some(record.started_at);
-        let date = record.started_at.date_naive();
+        let started_at = record.started_at.with_timezone(tz);
+        let mut printing_date = Some(&started_at);
+        let date = started_at.date_naive();
         let mut records_vec = vec![record];
         while let Some(record) = records.peek() {
-            if record.started_at.date_naive() != date {
+            let started_at = record.started_at.with_timezone(tz);
+            if started_at.date_naive() != date {
                 break;
             }
 
@@ -94,13 +113,17 @@ fn print_granularity_daily(
     Ok(())
 }
 
-fn print_daily_line(
+fn print_daily_line<Tz>(
     writer: &mut impl Write,
-    date: Option<DateTime<Utc>>,
+    date: Option<&DateTime<Tz>>,
     duration: Duration,
     project: String,
     task: &str,
-) -> Result<()> {
+) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     match date {
         Some(date) => print_date(writer, date)?,
         None => write!(writer, "             ")?,
@@ -115,7 +138,11 @@ fn print_daily_line(
     Ok(())
 }
 
-fn print_date(writer: &mut impl Write, started_at: DateTime<Utc>) -> Result<()> {
+fn print_date<Tz>(writer: &mut impl Write, started_at: &DateTime<Tz>) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     let weekday = &started_at.weekday().to_string()[..2];
     let date = started_at.format("%e %b '%y");
 
@@ -161,11 +188,15 @@ fn duration_to_string(mut duration: Duration) -> String {
     buf
 }
 
-fn print_times(
+fn print_times<Tz>(
     writer: &mut impl Write,
-    started_at: DateTime<Utc>,
-    ended_at: Option<DateTime<Utc>>,
-) -> Result<()> {
+    started_at: &DateTime<Tz>,
+    ended_at: &Option<DateTime<Tz>>,
+) -> Result<()>
+where
+    Tz: TimeZone,
+    Tz::Offset: Display,
+{
     write!(
         writer,
         "{:02}:{:02}:{:02}-",
@@ -183,7 +214,9 @@ fn print_times(
                 ended_at.minute(),
                 ended_at.second(),
             )?;
-            let day_gap = (ended_at - started_at).num_days();
+            let end_date = ended_at.date_naive();
+            let start_date = started_at.date_naive();
+            let day_gap = (end_date - start_date).num_days();
             if day_gap > 0 {
                 write!(writer, "+{day_gap}")?;
             } else {
@@ -223,7 +256,14 @@ mod tests {
         };
 
         let mut buffer = Vec::new();
-        print(&mut buffer, dt("14:00:00"), Granularity::All, vec![record]).unwrap();
+        print(
+            &mut buffer,
+            dt("14:00:00"),
+            Granularity::All,
+            vec![record],
+            &Utc,
+        )
+        .unwrap();
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,
@@ -245,7 +285,14 @@ Su 12 May '24  12:23:34-13:34:45       1h 11m 11s  (hello)  blob        blub\n"
         };
 
         let mut buffer = Vec::new();
-        print(&mut buffer, dt("14:00:00"), Granularity::All, vec![record]).unwrap();
+        print(
+            &mut buffer,
+            dt("14:00:00"),
+            Granularity::All,
+            vec![record],
+            &Utc,
+        )
+        .unwrap();
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,
@@ -276,7 +323,7 @@ Su 12 May '24  12:23:34-               1h 36m 26s  (hello)  blob        blub\n"
         ];
 
         let mut buffer = Vec::new();
-        print(&mut buffer, dt("15:00:00"), Granularity::All, records).unwrap();
+        print(&mut buffer, dt("15:00:00"), Granularity::All, records, &Utc).unwrap();
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,

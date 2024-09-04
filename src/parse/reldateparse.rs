@@ -1,8 +1,7 @@
 use std::sync::LazyLock;
 
-use chrono::{DateTime, Datelike, Days, Months, NaiveDate, TimeZone as _, Utc};
+use chrono::{DateTime, Datelike, Days, Months, NaiveDate, TimeZone, Utc};
 use regex::Regex;
-use tzfile::Tz;
 
 static REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -28,7 +27,11 @@ $ # anchor to end of string
     .expect("Could not parse Regex")
 });
 
-pub fn parse_relative_date(date: &str, timezone: &Tz, today: NaiveDate) -> Option<DateTime<Utc>> {
+pub fn parse_relative_date(
+    date: &str,
+    timezone: &impl TimeZone,
+    today: NaiveDate,
+) -> Option<DateTime<Utc>> {
     let date = date.trim();
     if date.eq_ignore_ascii_case("now") {
         let tomorrow = today.succ_opt()?;
@@ -59,7 +62,7 @@ pub fn parse_relative_date(date: &str, timezone: &Tz, today: NaiveDate) -> Optio
     }
 }
 
-fn start_of_day(timezone: &Tz, day: NaiveDate) -> Option<DateTime<Utc>> {
+fn start_of_day(timezone: &impl TimeZone, day: NaiveDate) -> Option<DateTime<Utc>> {
     let start = timezone
         .with_ymd_and_hms(day.year(), day.month(), day.day(), 0, 0, 0)
         .earliest()?
@@ -70,6 +73,7 @@ fn start_of_day(timezone: &Tz, day: NaiveDate) -> Option<DateTime<Utc>> {
 #[cfg(test)]
 mod tests {
     use chrono::Weekday;
+    use tzfile::Tz;
 
     use super::*;
 
@@ -79,75 +83,75 @@ mod tests {
 
     #[test]
     fn parse_relative_date_returns_start_of_next_day_if_passed_now() {
-        let result = parse_relative_date("now", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("now", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 6, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_next_day_in_other_timezone_if_passed_now() {
         let result =
-            parse_relative_date("now", &Tz::named("Europe/Berlin").unwrap(), today()).unwrap();
+            parse_relative_date("now", &&Tz::named("Europe/Berlin").unwrap(), today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 5, 22, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_day_when_passed_1_day() {
-        let result = parse_relative_date("1 day", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("1 day", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 5, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_day_when_passed_0_day() {
-        let result = parse_relative_date("0 day", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("0 day", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 5, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_prev_day_when_passed_2_days() {
-        let result = parse_relative_date("2 day", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("2 day", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 4, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_month_when_passed_1m() {
-        let result = parse_relative_date("1m", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("1m", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 1, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_month_when_passed_4m() {
-        let result = parse_relative_date("4m", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("4m", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_year_when_passed_1y() {
-        let result = parse_relative_date("1y", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("1y", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn parse_relative_date_returns_start_of_year_when_passed_5y() {
-        let result = parse_relative_date("5y", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("5y", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap());
     }
 
     #[test]
     fn cannot_parse_combinations_of_multiple_units() {
-        let result = parse_relative_date("5y 4m", &Tz::named("Etc/UTC").unwrap(), today());
+        let result = parse_relative_date("5y 4m", &Utc, today());
         assert_eq!(result, None);
     }
 
     #[test]
     fn parses_week_to_start_of_current_week() {
-        let result = parse_relative_date("1w", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("1w", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 4, 1, 0, 0, 0).unwrap());
         assert_eq!(result.weekday(), Weekday::Mon);
     }
 
     #[test]
     fn parses_weeks_to_start_of_current_week() {
-        let result = parse_relative_date("3w", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let result = parse_relative_date("3w", &Utc, today()).unwrap();
         assert_eq!(result, Utc.with_ymd_and_hms(2024, 3, 18, 0, 0, 0).unwrap());
         assert_eq!(result.weekday(), Weekday::Mon);
     }

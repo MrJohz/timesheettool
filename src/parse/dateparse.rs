@@ -2,7 +2,6 @@ use std::{str::FromStr, sync::LazyLock};
 
 use chrono::{DateTime, Datelike, Days, NaiveDate, TimeZone, Utc, Weekday};
 use regex::{Match, Regex};
-use tzfile::Tz;
 
 static REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -27,7 +26,10 @@ $ # anchor to end of string
     .expect("Could not parse Regex")
 });
 
-pub fn parse_date(date: &str, timezone: &Tz, today: NaiveDate) -> Option<DateTime<Utc>> {
+pub fn parse_date<Tz>(date: &str, timezone: &Tz, today: NaiveDate) -> Option<DateTime<Utc>>
+where
+    Tz: TimeZone,
+{
     let captures = REGEX.captures(date.trim())?;
 
     let today = parse_relative_date(captures.get(4).map(|f| f.as_str()), today)?;
@@ -74,6 +76,7 @@ fn capture_with_default<T: FromStr>(m: Option<Match>, default: T) -> T {
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
+    use tzfile::Tz;
 
     use super::*;
 
@@ -83,45 +86,25 @@ mod tests {
 
     #[test]
     fn parses_simplified_iso_format() {
-        let parsed = parse_date(
-            "2022-01-05 01:05:07",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("2022-01-05 01:05:07", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 7).unwrap());
     }
 
     #[test]
     fn parses_simplified_iso_format_with_excess_whitespace() {
-        let parsed = parse_date(
-            "    2022-01-05    01:05:07    ",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("    2022-01-05    01:05:07    ", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 7).unwrap());
     }
 
     #[test]
     fn parses_simplified_iso_format_with_lowercase_t() {
-        let parsed = parse_date(
-            "2022-01-05 t 01:05:07",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("2022-01-05 t 01:05:07", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 7).unwrap());
     }
 
     #[test]
     fn parses_simplified_iso_format_with_uppercase_t() {
-        let parsed = parse_date(
-            "2022-01-05T01:05:07",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("2022-01-05T01:05:07", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 7).unwrap());
     }
 
@@ -129,7 +112,7 @@ mod tests {
     fn parses_simplified_iso_format_from_given_timezone() {
         let parsed = parse_date(
             "2022-01-05 01:05:00",
-            &Tz::named("Europe/Berlin").unwrap(),
+            &&Tz::named("Europe/Berlin").unwrap(),
             today(),
         )
         .unwrap();
@@ -138,55 +121,43 @@ mod tests {
 
     #[test]
     fn seconds_defaults_to_zero_if_not_provided() {
-        let parsed =
-            parse_date("2022-01-05 01:05", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let parsed = parse_date("2022-01-05 01:05", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2022, 1, 5, 1, 5, 0).unwrap());
     }
 
     #[test]
     fn can_leave_aside_date_part_to_get_current_date() {
-        let parsed = parse_date("01:05:00", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let parsed = parse_date("01:05:00", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2024, 4, 5, 1, 5, 0).unwrap())
     }
 
     #[test]
     fn today_represents_the_current_date() {
-        let parsed = parse_date("today 01:05:00", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let parsed = parse_date("today 01:05:00", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2024, 4, 5, 1, 5, 0).unwrap())
     }
 
     #[test]
     fn yesterday_represents_the_day_before_today() {
-        let parsed = parse_date(
-            "yesterday 01:05:00",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("yesterday 01:05:00", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2024, 4, 4, 1, 5, 0).unwrap())
     }
 
     #[test]
     fn parsing_relative_is_case_insensitive() {
-        let parsed = parse_date(
-            "YEstERdaY 01:05:00",
-            &Tz::named("Etc/UTC").unwrap(),
-            today(),
-        )
-        .unwrap();
+        let parsed = parse_date("YEstERdaY 01:05:00", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2024, 4, 4, 1, 5, 0).unwrap())
     }
 
     #[test]
     fn allows_relative_parse_with_weekdays() {
-        let parsed =
-            parse_date("tuesday 01:05:00", &Tz::named("Etc/UTC").unwrap(), today()).unwrap();
+        let parsed = parse_date("tuesday 01:05:00", &Utc, today()).unwrap();
         assert_eq!(parsed, Utc.with_ymd_and_hms(2024, 4, 2, 1, 5, 0).unwrap())
     }
 
     #[test]
     fn doesnt_allow_parsing_relative_date_with_current_day_of_week() {
-        let parsed = parse_date("friday 01:05:00", &Tz::named("Etc/UTC").unwrap(), today());
+        let parsed = parse_date("friday 01:05:00", &Utc, today());
         assert_eq!(parsed, None);
     }
 }
