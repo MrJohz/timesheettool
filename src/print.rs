@@ -11,6 +11,7 @@ pub fn print<Tz>(
     granularity: Granularity,
     records: Vec<Record>,
     tz: &Tz,
+    rounding_minutes: u32,
 ) -> Result<()>
 where
     Tz: TimeZone,
@@ -18,7 +19,7 @@ where
 {
     match granularity {
         Granularity::All => print_granularity_all(writer, now, records, tz)?,
-        Granularity::Daily => print_granularity_daily(writer, now, records, tz)?,
+        Granularity::Daily => print_granularity_daily(writer, now, records, tz, rounding_minutes)?,
         _ => unimplemented!("not yet implemented - other granularities like {granularity:?}"),
     }
     Ok(())
@@ -69,6 +70,7 @@ fn print_granularity_daily<Tz>(
     now: DateTime<Utc>,
     records: Vec<Record>,
     tz: &Tz,
+    rounding_minutes: u32,
 ) -> Result<()>
 where
     Tz: TimeZone,
@@ -91,7 +93,7 @@ where
             records_vec.push(records.next().unwrap());
         }
 
-        records_vec.sort_unstable_by(|a, b| a.project.cmp(&b.task).reverse());
+        records_vec.sort_unstable_by(|a, b| a.project.cmp(&b.project).reverse());
         let mut records = records_vec.into_iter().peekable();
         while let Some(record) = records.next() {
             let project = &record.project;
@@ -112,7 +114,13 @@ where
             tasks.sort_unstable();
             let tasks = tasks.join(", ");
 
-            print_daily_line(writer, printing_date, duration, record.project, &tasks)?;
+            print_daily_line(
+                writer,
+                printing_date,
+                round_duration(duration, rounding_minutes),
+                record.project,
+                &tasks,
+            )?;
             printing_date = None;
         }
     }
@@ -157,6 +165,22 @@ where
     Ok(())
 }
 
+fn round_duration(duration: Duration, rounding_minutes: u32) -> Duration {
+    let duration_secs = duration.num_seconds();
+    let rounding_seconds = (rounding_minutes * 60) as i64;
+
+    Duration::seconds(round_to_next(duration_secs, rounding_seconds))
+}
+
+fn round_to_next(value: i64, unit: i64) -> i64 {
+    let remainder = value % unit;
+    if remainder == 0 {
+        value
+    } else {
+        value + unit - remainder
+    }
+}
+
 fn duration_to_string(mut duration: Duration) -> String {
     let mut buf = String::new();
     let days = duration.num_days();
@@ -181,15 +205,6 @@ fn duration_to_string(mut duration: Duration) -> String {
         }
         buf.push_str(&minutes.to_string());
         buf.push('m');
-    }
-    duration -= Duration::minutes(minutes);
-    let seconds = duration.num_seconds();
-    if seconds > 0 || !buf.is_empty() {
-        if !buf.is_empty() {
-            buf.push(' ');
-        }
-        buf.push_str(&seconds.to_string());
-        buf.push('s');
     }
 
     buf
@@ -269,6 +284,7 @@ mod tests {
             Granularity::All,
             vec![record],
             &Utc,
+            15,
         )
         .unwrap();
         let result = String::from_utf8(buffer).unwrap();
@@ -298,6 +314,7 @@ Su 12 May '24  12:23:34-13:34:45       1h 11m 11s  (hello)  blob        blub\n"
             Granularity::All,
             vec![record],
             &Utc,
+            15,
         )
         .unwrap();
         let result = String::from_utf8(buffer).unwrap();
@@ -330,7 +347,15 @@ Su 12 May '24  12:23:34-               1h 36m 26s  (hello)  blob        blub\n"
         ];
 
         let mut buffer = Vec::new();
-        print(&mut buffer, dt("15:00:00"), Granularity::All, records, &Utc).unwrap();
+        print(
+            &mut buffer,
+            dt("15:00:00"),
+            Granularity::All,
+            records,
+            &Utc,
+            15,
+        )
+        .unwrap();
         let result = String::from_utf8(buffer).unwrap();
         assert_eq!(
             result,

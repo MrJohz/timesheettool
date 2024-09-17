@@ -111,6 +111,7 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
         granularity,
         recs.list_records(start, end)?,
         &Local,
+        config.time_round_minutes,
     )?;
     Ok(())
 }
@@ -157,7 +158,13 @@ pub(crate) fn overtime(config: Config, overtime: timesheettool::commands::Overti
         let rec_day = record.started_at.with_timezone(&Local).date_naive();
         if Some(rec_day) != day {
             if let Some(day) = day {
-                print_overtime(&mut difference, &mut seconds_for_day, &day, overtime.hours);
+                print_overtime(
+                    &mut difference,
+                    &mut seconds_for_day,
+                    &day,
+                    overtime.hours,
+                    config.time_round_minutes,
+                );
             }
 
             day = Some(rec_day);
@@ -171,7 +178,13 @@ pub(crate) fn overtime(config: Config, overtime: timesheettool::commands::Overti
     }
 
     if let Some(day) = day {
-        print_overtime(&mut difference, &mut seconds_for_day, &day, overtime.hours);
+        print_overtime(
+            &mut difference,
+            &mut seconds_for_day,
+            &day,
+            overtime.hours,
+            config.time_round_minutes,
+        );
     }
 
     Ok(())
@@ -182,10 +195,11 @@ fn print_overtime(
     seconds_for_day: &mut HashMap<String, i64>,
     day: &NaiveDate,
     hours_for_day: f64,
+    rounding_minutes: u32,
 ) {
     let hours = seconds_for_day
         .drain()
-        .map(|(_, value)| round_to_next(value, 30 * 60) as f64)
+        .map(|(_, value)| round_to_next(value, rounding_minutes as i64 * 60) as f64)
         .sum::<f64>()
         / (60.0 * 60.0);
     *difference += hours - hours_for_day;

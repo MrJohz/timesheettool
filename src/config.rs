@@ -32,14 +32,21 @@ pub fn load_config(config_path: Option<PathBuf>) -> Config {
         })
         .expect("OS data directory could not be determined, use config file to set a database file location");
     log::trace!("Config: database_path is {:?}", &database_path);
-    Config { database_path }
+
+    let time_round_minutes = config_toml.time_round_minutes.unwrap_or(15);
+    Config {
+        database_path,
+        time_round_minutes,
+    }
 }
 
 pub struct Config {
     pub database_path: PathBuf,
+    pub time_round_minutes: u32,
 }
 
 #[derive(Default, serde::Deserialize)]
 struct PartialConfig {
     database_path: Option<PathBuf>,
+    time_round_minutes: Option<u32>,
 }
