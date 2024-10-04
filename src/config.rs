@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::{fs::read_to_string, path::PathBuf};
 
 const APP_NAME: &str = "timesheettool";

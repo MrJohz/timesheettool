@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MPL-2.0
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE

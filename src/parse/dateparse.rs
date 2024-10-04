@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::{str::FromStr, sync::LazyLock};
 
 use chrono::{DateTime, Datelike, Days, NaiveDate, TimeZone, Utc, Weekday};

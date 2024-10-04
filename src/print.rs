@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::{collections::HashSet, fmt::Display, io::Write};
 
 use anyhow::Result;

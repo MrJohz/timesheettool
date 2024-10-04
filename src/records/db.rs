@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::fs::create_dir_all;
 use std::path::Path;
 

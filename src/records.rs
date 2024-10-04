@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::sync::LazyLock;
 
 use anyhow::{anyhow, bail, Result};
