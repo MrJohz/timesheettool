@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::Peekable};
 
 use anyhow::{anyhow, Result};
-use chrono::{Duration, Local, NaiveDate, SubsecRound as _, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, SubsecRound as _, Utc, Weekday};
 use timesheettool::{
     commands::{Go, Granularity, ListRecords, Stop},
     config::Config,
     parse::{parse_date, parse_relative_date},
     print::print,
-    records,
+    records::{self, Record},
 };
 
 pub fn go(config: Config, go: Go) -> Result<()> {
@@ -86,8 +86,10 @@ pub fn ls(config: Config, list_records: ListRecords) -> Result<()> {
 
     let now = Utc::now();
     let today = Local::now().naive_local().date();
-    let start = parse_relative_date(&list_records.since, &Local, today)
-        .ok_or(anyhow!("could not parse end time {}", &list_records.since))?;
+    let start = parse_relative_date(&list_records.since, &Local, today).ok_or(anyhow!(
+        "could not parse start time {}",
+        &list_records.since
+    ))?;
     let end = parse_relative_date(&list_records.until, &Local, today)
         .ok_or(anyhow!("could not parse end time {}", &list_records.until))?;
 
@@ -151,61 +153,140 @@ pub(crate) fn overtime(config: Config, overtime: timesheettool::commands::Overti
     let mut recs = records::Records::new(&mut conn);
 
     let now = Utc::now();
+    let today = Local::now().naive_local().date();
+    let start = parse_relative_date(&overtime.since, &Local, today)
+        .ok_or(anyhow!("could not parse start time {}", &overtime.since))?
+        .with_timezone(&Local)
+        .date_naive();
 
-    let mut difference = 0.0;
-    let mut seconds_for_day = HashMap::new();
-    let mut day = None;
-    for record in recs.all_records()? {
+    for record in OvertimeIter::new(
+        recs.all_records()?,
+        overtime.hours,
+        config.time_round_minutes,
+        now,
+    ) {
         let record = record?;
-        let rec_day = record.started_at.with_timezone(&Local).date_naive();
-        if Some(rec_day) != day {
-            if let Some(day) = day {
-                print_overtime(
-                    &mut difference,
-                    &mut seconds_for_day,
-                    &day,
-                    overtime.hours,
-                    config.time_round_minutes,
-                );
-            }
-
-            day = Some(rec_day);
+        if record.date < start {
+            continue;
         }
-
-        let seconds = record.duration(now).num_seconds();
-        seconds_for_day
-            .entry(record.project)
-            .and_modify(|e| *e += seconds)
-            .or_insert(seconds);
-    }
-
-    if let Some(day) = day {
-        print_overtime(
-            &mut difference,
-            &mut seconds_for_day,
-            &day,
-            overtime.hours,
-            config.time_round_minutes,
+        println!(
+            "Hours worked for day {}: {:.2} ({:+.2})   (balance: {:+.2})",
+            record.date, record.hours_day, record.hours_difference, record.hours_total
         );
     }
 
     Ok(())
 }
 
-fn print_overtime(
-    difference: &mut f64,
-    seconds_for_day: &mut HashMap<String, i64>,
-    day: &NaiveDate,
+struct OvertimeIter<T>
+where
+    T: Iterator<Item = Result<Record>>,
+{
+    now: DateTime<Utc>,
+    day: Option<NaiveDate>,
+    seconds_day: HashMap<String, i64>,
+    hours_total: f64,
     hours_for_day: f64,
     rounding_minutes: u32,
-) {
-    let hours = seconds_for_day
-        .drain()
-        .map(|(_, value)| round_to_next(value, rounding_minutes as i64 * 60) as f64)
-        .sum::<f64>()
-        / (60.0 * 60.0);
-    *difference += hours - hours_for_day;
-    println!("Hours worked for day {day}: {hours:.2}   (balance: {difference:+.2})");
+    records: Peekable<T>,
+    finished: bool,
+}
+
+#[derive(Debug)]
+struct OvertimeRecord {
+    date: NaiveDate,
+    hours_day: f64,
+    hours_difference: f64,
+    hours_total: f64,
+}
+
+impl<T> OvertimeIter<T>
+where
+    T: Iterator<Item = Result<Record>>,
+{
+    pub fn new(records: T, hours_for_day: f64, rounding_minutes: u32, now: DateTime<Utc>) -> Self {
+        Self {
+            now,
+            hours_for_day,
+            rounding_minutes,
+            records: records.peekable(),
+            day: None,
+            seconds_day: HashMap::new(),
+            hours_total: 0.0,
+            finished: false,
+        }
+    }
+}
+
+impl<T> Iterator for OvertimeIter<T>
+where
+    T: Iterator<Item = Result<Record>>,
+{
+    type Item = Result<OvertimeRecord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        let today = self.day;
+        loop {
+            match self.records.peek() {
+                None => {
+                    self.finished = true;
+                    break;
+                }
+                Some(Err(_)) => {
+                    return Some(Err(self.records.next().unwrap().unwrap_err()));
+                }
+                Some(Ok(record)) => {
+                    let day = record.started_at.with_timezone(&Local).date_naive();
+                    if Some(day) != self.day {
+                        self.day = Some(day);
+                        break;
+                    }
+
+                    let seconds = record.duration(self.now).num_seconds();
+
+                    self.seconds_day
+                        .entry(record.project.clone())
+                        .and_modify(|e| *e += seconds)
+                        .or_insert(seconds);
+                }
+            }
+            self.records.next();
+        }
+
+        match today {
+            None => self.next(),
+            Some(day) => {
+                let hours_for_day = if matches!(day.weekday(), Weekday::Sat | Weekday::Sun) {
+                    0.0
+                } else {
+                    self.hours_for_day
+                };
+
+                let hours = self
+                    .seconds_day
+                    .drain()
+                    .map(|(_, value)| {
+                        round_to_next(value, self.rounding_minutes as i64 * 60) as f64
+                    })
+                    .sum::<f64>()
+                    / (60.0 * 60.0);
+
+                let difference = hours - hours_for_day;
+                self.hours_total += difference;
+
+                Some(Ok(OvertimeRecord {
+                    date: day,
+                    hours_day: hours,
+                    hours_difference: difference,
+                    hours_total: self.hours_total,
+                }))
+            }
+        }
+    }
 }
 
 fn round_to_next(value: i64, unit: i64) -> i64 {

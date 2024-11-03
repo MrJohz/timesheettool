@@ -205,4 +205,13 @@ pub struct Overtime {
     /// The number of hours in a conventional work day.  Defaults to 8.
     #[arg(long, default_value = "8.0")]
     pub hours: f64,
+
+    /// how long back to show overtime records
+    ///
+    /// Results will be rounded to the beginning of the relevant period.
+    /// For example, if since is "1 week", then all records from the start
+    /// of the current week will be shown.  Similarly, an argument of
+    /// "2 months" will show all records from the current and previous months.
+    #[arg(short = 's', long, default_value = "1 week")]
+    pub since: String,
 }
