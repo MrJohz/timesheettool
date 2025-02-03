@@ -1,3 +1,4 @@
 /target
 timesheettool.toml
 dev.db
+.env
