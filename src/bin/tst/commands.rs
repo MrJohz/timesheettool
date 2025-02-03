@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{collections::HashMap, iter::Peekable};
+use std::{collections::HashMap, io::Write, iter::Peekable};
 
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, SubsecRound as _, Utc, Weekday};
+use chrono::{
+    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, SubsecRound as _, TimeDelta,
+    Utc, Weekday,
+};
+use itertools::Itertools;
 use timesheettool::{
     commands::{Go, Granularity, ListRecords, Stop},
     config::Config,
@@ -146,6 +150,107 @@ pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Resul
     log::info!("Record updated: {record:?}");
 
     Ok(())
+}
+
+pub(crate) fn times(config: Config, times: timesheettool::commands::Times) -> Result<()> {
+    let mut conn = records::establish_connection(&config.database_path)?;
+    let mut recs = records::Records::new(&mut conn);
+
+    let now = Utc::now();
+    let today = Local::now().naive_local().date();
+    let start = parse_relative_date(&times.since, &Local, today)
+        .ok_or(anyhow!("could not parse start time {}", &times.since))?;
+    let end = parse_relative_date(&times.until, &Local, today)
+        .ok_or(anyhow!("could not parse end time {}", &times.until))?;
+
+    let mut stdout = std::io::stdout().lock();
+    let days = recs
+        .list_records(start, end)?
+        .into_iter()
+        .chunk_by(|r| r.started_at.with_timezone(&Local).date_naive());
+
+    for (day, records) in &days {
+        let mut records = records.peekable();
+
+        let start = records
+            .peek()
+            .unwrap()
+            .started_at
+            .duration_trunc(TimeDelta::minutes(15))
+            .unwrap();
+        let start_local = start.with_timezone(&Local);
+
+        let start_text = start_local.format("%H:%M");
+
+        let (end, pauses) = breaks(records);
+        let end = end.map(|last| {
+            // There is no `duration_ceil` or similar, but this *should* do the right
+            // thing, right?
+            (last + TimeDelta::seconds(((60 * 15) / 2) - 1))
+                .duration_round(TimeDelta::minutes(15))
+                .unwrap()
+        });
+        let mut hours = end.unwrap_or(now) - start;
+
+        let end = end
+            .map(|last| last.with_timezone(&Local).format("%H:%M").to_string())
+            .unwrap_or("     ".into());
+
+        let mut pause_sum = TimeDelta::zero();
+        let pauses = pauses
+            .into_iter()
+            .map(|(start, end)| {
+                pause_sum += end - start;
+                let start = start.with_timezone(&Local).format("%H:%M");
+                let end = end.with_timezone(&Local).format("%H:%M");
+                format!("{start} - {end}")
+            })
+            .join(", ");
+
+        hours -= (pause_sum).max(TimeDelta::minutes(30));
+
+        writeln!(
+            stdout,
+            "{day}: {start_text} - {end}  (hours: {}, breaks: {pauses})",
+            format_duration(hours),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn format_duration(delta: TimeDelta) -> String {
+    let minutes = delta.num_minutes() % 60;
+    let hours = delta.num_minutes() / 60;
+    return format!("{hours:0>2}:{minutes:0>2}");
+}
+
+fn breaks(
+    records: impl Iterator<Item = Record>,
+) -> (Option<DateTime<Utc>>, Vec<(DateTime<Utc>, DateTime<Utc>)>) {
+    let mut end: Option<DateTime<Utc>> = None;
+    let mut pauses = Vec::new();
+    for record in records {
+        if let Some(end) = end {
+            let gap = record.started_at - end;
+            if gap > TimeDelta::seconds(60) {
+                let gap_start = end.duration_round(TimeDelta::minutes(5)).unwrap();
+                let mut gap_end = record
+                    .started_at
+                    .duration_round(TimeDelta::minutes(5))
+                    .unwrap();
+
+                let new_gap = gap_end - gap_start;
+                if new_gap < TimeDelta::minutes(30) {
+                    gap_end += TimeDelta::minutes(30) - new_gap;
+                }
+                pauses.push((gap_start, gap_end));
+            }
+        }
+        end = record.ended_at;
+    }
+
+    (end, pauses)
 }
 
 pub(crate) fn overtime(config: Config, overtime: timesheettool::commands::Overtime) -> Result<()> {

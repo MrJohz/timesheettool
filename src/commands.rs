@@ -75,6 +75,9 @@ pub enum Commands {
 
     /// View overtime statistics
     Overtime(Overtime),
+
+    /// View day start/end times and breaks
+    Times(Times),
 }
 
 #[derive(Args, Debug)]
@@ -214,4 +217,26 @@ pub struct Overtime {
     /// "2 months" will show all records from the current and previous months.
     #[arg(short = 's', long, default_value = "1 week")]
     pub since: String,
+}
+
+#[derive(Args, Debug)]
+pub struct Times {
+    /// how long back to show time records
+    ///
+    /// Results will be rounded to the beginning of the relevant period.
+    /// For example, if since is "1 week", then all records from the start
+    /// of the current week will be shown.  Similarly, an argument of
+    /// "2 months" will show all records from the current and previous months.
+    #[arg(short = 's', long, default_value = "1 week")]
+    pub since: String,
+
+    /// when to show records until
+    ///
+    /// Results will be rounded to the beginning of the relevant period.
+    /// For example, if until is "1 week", then records will be shown until
+    /// the start of the current week.  Similarly, an argument of "2 months"
+    /// will show all records up until the beginning of the previous month.
+    /// The keyword "now" will show results until the current time.
+    #[arg(short = 'u', long, default_value = "now")]
+    pub until: String,
 }
