@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use sqids::{Sqids, SqidsBuilder};
 
 use db::{
-    get_most_recent_record, get_project_for_record, insert_record, query_records,
+    delete_record, get_most_recent_record, get_project_for_record, insert_record, query_records,
     query_records_all, set_record_end_timestamp, update_record, upsert_project, Conn,
 };
 
@@ -154,6 +154,12 @@ impl<'a> Records<'a> {
             task: record.task,
             project: get_project_for_record(self.db, record.id)?.name,
         })
+    }
+    pub fn delete_record(&mut self, record_id: &str) -> Result<()> {
+        let id = desqid(record_id)?;
+
+        delete_record(self.db, id)?;
+        Ok(())
     }
 
     pub fn all_records(&mut self) -> Result<impl Iterator<Item = Result<Record>> + '_> {

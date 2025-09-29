@@ -188,6 +188,15 @@ pub fn update_record(
     Ok(record)
 }
 
+pub fn delete_record(conn: &mut Conn, record_id: i32) -> Result<Record> {
+    use super::schema::records;
+    let record = diesel::delete(records::table.filter(records::id.eq(record_id)))
+        .returning(Record::as_returning())
+        .get_result(&mut conn.0)?;
+
+    Ok(record)
+}
+
 pub fn get_project_for_record(conn: &mut Conn, record_id: i32) -> Result<Project> {
     use super::schema::projects;
     use super::schema::records;

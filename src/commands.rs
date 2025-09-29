@@ -73,6 +73,12 @@ pub enum Commands {
     /// with care.
     Edit(Edit),
 
+    /// Delete an existing record
+    ///
+    /// Delete an existing record by its ID.  Note: this can break some of the
+    /// assumptions made by timesheettool, so use this with care.
+    Delete(Delete),
+
     /// View overtime statistics
     Overtime(Overtime),
 
@@ -199,6 +205,14 @@ pub struct Edit {
     /// the tag name doesn't exist yet in the database, it will be created.
     #[arg(short = 't', long)]
     pub task: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct Delete {
+    /// record id
+    ///
+    /// The five-letter record ID
+    pub record_id: String,
 }
 
 #[derive(Args, Debug)]

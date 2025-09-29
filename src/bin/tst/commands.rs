@@ -152,6 +152,17 @@ pub(crate) fn edit(config: Config, edit: timesheettool::commands::Edit) -> Resul
     Ok(())
 }
 
+pub(crate) fn delete(config: Config, delete: timesheettool::commands::Delete) -> Result<()> {
+    let mut conn = records::establish_connection(&config.database_path)?;
+    let mut recs = records::Records::new(&mut conn);
+
+    recs.delete_record(&delete.record_id)?;
+
+    log::info!("Record deleted: {}", delete.record_id);
+
+    Ok(())
+}
+
 pub(crate) fn times(config: Config, times: timesheettool::commands::Times) -> Result<()> {
     let mut conn = records::establish_connection(&config.database_path)?;
     let mut recs = records::Records::new(&mut conn);
@@ -235,15 +246,11 @@ fn breaks(
             let gap = record.started_at - end;
             if gap > TimeDelta::seconds(60) {
                 let gap_start = end.duration_round(TimeDelta::minutes(5)).unwrap();
-                let mut gap_end = record
+                let gap_end = record
                     .started_at
                     .duration_round(TimeDelta::minutes(5))
                     .unwrap();
 
-                let new_gap = gap_end - gap_start;
-                if new_gap < TimeDelta::minutes(30) {
-                    gap_end += TimeDelta::minutes(30) - new_gap;
-                }
                 pauses.push((gap_start, gap_end));
             }
         }

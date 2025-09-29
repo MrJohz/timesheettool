@@ -26,6 +26,7 @@ fn main() -> Result<()> {
         Commands::Stop(stop) => commands::stop(config, stop)?,
         Commands::Ls(list_records) => commands::ls(config, list_records)?,
         Commands::Edit(edit) => commands::edit(config, edit)?,
+        Commands::Delete(delete) => commands::delete(config, delete)?,
         Commands::Overtime(overtime) => commands::overtime(config, overtime)?,
         Commands::Times(times) => commands::times(config, times)?,
     }
